@@ -14,7 +14,6 @@ services:
       - MAX_CACHE_FILES=30
     volumes:
       - ./data:/data
-      - ./data/channels.txt:/channels.txt:ro
     ports:
       - "7888:8080"   # ffmpeg MPEG-TS stream
       - "7889:8090"   # M3U + XMLTV + logo HTTP server

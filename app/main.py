@@ -28,7 +28,7 @@ PLAYLIST_FILE = os.path.join(DATA_DIR, "playlist.json")
 XMLTV_PATH = os.path.join(DATA_DIR, "guide.xml")
 M3U_PATH = os.path.join(DATA_DIR, "channel.m3u")
 LOGO_PATH = os.path.join(DATA_DIR, "logo.jpg")
-CHANNELS_FILE = "/channels.txt"
+CHANNELS_FILE = os.path.join(DATA_DIR, "channels.txt")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 
