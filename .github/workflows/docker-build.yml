@@ -44,4 +44,4 @@ jobs:
           push: true
           platforms: linux/amd64   # 👈 force x86_64 only
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{
+          labels: ${{ steps.meta.outputs.labels }}
