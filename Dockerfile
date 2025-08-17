@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 python:3.11-slim
+FROM --platform=$BUILDPLATFORM python:3.11-slim
 
 # Install ffmpeg, yt-dlp, streamlink
 RUN apt-get update && apt-get install -y ffmpeg curl \

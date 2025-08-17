@@ -1,4 +1,4 @@
-name: Publish Docker image to GHCR (amd64 only)
+name: Publish Docker image to GHCR (multi-arch)
 
 on:
   push:
@@ -17,7 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Ensure QEMU + Buildx are set up (required for platforms to work)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -37,11 +36,11 @@ jobs:
         with:
           images: ghcr.io/trekkerstudios/twitch-jellyfin
 
-      - name: Build and push Docker image (amd64 only)
+      - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          platforms: linux/amd64   # 👈 force x86_64 only
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
