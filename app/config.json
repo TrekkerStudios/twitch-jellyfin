@@ -1,0 +1,20 @@
+{
+  "twitch": {
+    "client_id": "your_client_id",
+    "oauth_token": "your_oauth_token",
+    "channel": "twitch_channel"
+  },
+  "youtube": {
+    "update_interval": 3600,
+    "channels": [
+      "UCxxxxxxx1",
+      "UCxxxxxxx2"
+    ]
+  },
+  "output": {
+    "ffmpeg_url": "http://0.0.0.0:8080/channel",
+    "m3u_path": "/data/channel.m3u",
+    "xmltv_path": "/data/guide.xml",
+    "http_port": 8090
+  }
+}

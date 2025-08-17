@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  live-channel:
+    build: .
+    container_name: live-channel
+    environment:
+      - TWITCH_CLIENT_ID=your_client_id
+      - TWITCH_OAUTH_TOKEN=your_oauth_token
+      - TWITCH_CHANNEL=your_channel_name
+      - YOUTUBE_UPDATE_INTERVAL=3600
+      - FFMPEG_URL=http://0.0.0.0:8080/channel
+      - HTTP_PORT=8090
+    volumes:
+      - ./data:/data
+      - ./channels.txt:/channels.txt:ro
+    ports:
+      - "8080:8080"   # ffmpeg MPEG-TS stream
+      - "8090:8090"   # M3U + XMLTV + logo HTTP server
