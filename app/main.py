@@ -17,9 +17,10 @@ TWITCH_OAUTH_TOKEN = os.getenv("TWITCH_OAUTH_TOKEN")
 TWITCH_USER_OAUTH = os.getenv("TWITCH_USER_OAUTH")
 TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL")
 UPDATE_INTERVAL = int(os.getenv("YOUTUBE_UPDATE_INTERVAL", "3600"))
-HTTP_PORT = int(os.getenv("HTTP_PORT", "8090"))
+HTTP_PORT = int(os.getenv("HTTP_PORT", "8090")) # This is the port for our internal HTTP server
 MAX_VIDEO_DURATION = int(os.getenv("MAX_VIDEO_DURATION", "3600"))
 MAX_CACHE_FILES = int(os.getenv("MAX_CACHE_FILES", "50"))
+EXTERNAL_HOST_IP = os.getenv("EXTERNAL_HOST_IP", "localhost") # <-- NEW: IP/Hostname Jellyfin uses to access *this* container
 
 # Paths
 DATA_DIR = "/data"
@@ -33,6 +34,7 @@ CHANNELS_FILE = os.path.join(DATA_DIR, "channels.txt")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(HLS_DIR, exist_ok=True)
+
 
 _last_channels_mtime = 0
 _cached_channels = []
@@ -189,7 +191,7 @@ def try_twitch():
         return None
 
 
-def run_ffmpeg(input_src, title="Unknown"):
+def run_ffmpeg_hls(input_src):
     # Clean old HLS files
     for f in glob.glob(os.path.join(HLS_DIR, "*")):
         os.remove(f)
@@ -232,14 +234,14 @@ def run_test_pattern():
 
 def generate_m3u():
     channel_name = TWITCH_CHANNEL.capitalize() if TWITCH_CHANNEL else "Live Channel"
-    logo_url = f"http://{os.environ.get('HOSTNAME', 'localhost')}:{HTTP_PORT}/logo.jpg"
+    logo_url = f"http://{EXTERNAL_HOST_IP}:{HTTP_PORT}/logo.jpg"
     with open(M3U_PATH, "w") as f:
         f.write("#EXTM3U\n")
         f.write(
             f'#EXTINF:-1 tvg-id="{TWITCH_CHANNEL}" tvg-name="{channel_name}" '
             f'tvg-logo="{logo_url}" group-title="Twitch",{channel_name}\n'
         )
-        f.write(f"http://{os.environ.get('HOSTNAME', 'localhost')}:{HTTP_PORT}/hls/stream.m3u8\n")
+        f.write(f"http://{EXTERNAL_HOST_IP}:{HTTP_PORT}/hls/stream.m3u8\n")
     print(f"Generated M3U for {channel_name}")
 
 
@@ -270,7 +272,7 @@ def play_loop():
         if twitch_url:
             print("Twitch is live, switching...")
             write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
-            proc = run_ffmpeg(twitch_url, title=f"Twitch Live: {TWITCH_CHANNEL}")
+            proc = run_ffmpeg_hls(twitch_url)
             proc.wait()
             continue
 
@@ -291,9 +293,18 @@ def play_loop():
 
         for video in videos:
             try:
+                # Re-check Twitch live status before playing each YouTube video
+                twitch_url = try_twitch()
+                if twitch_url:
+                    print("Twitch went live, switching to Twitch...")
+                    write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
+                    proc = run_ffmpeg_hls(twitch_url)
+                    proc.wait()
+                    break  # Break out of YouTube loop to re-evaluate Twitch priority
+                
                 print(f"Playing YouTube VOD: {video['title']}")
                 write_xmltv(f"YouTube: {video['title']}")
-                proc = run_ffmpeg(video["file"], title=video["title"])
+                proc = run_ffmpeg_hls(video["file"])
                 proc.wait()
             except Exception as e:
                 print(f"Error in play loop: {e}")
@@ -311,8 +322,11 @@ def serve_files():
 if __name__ == "__main__":
     if not os.path.exists(CHANNELS_FILE):
         with open(CHANNELS_FILE, "w") as f:
-            f.write("# Add YouTube channel IDs or @handles here\n")
-        print("Created default channels.txt")
+            f.write("# Add YouTube channel IDs, @handles, or full channel URLs here\n")
+            f.write("# One per line, e.g.:\n")
+            f.write("# @LinusTechTips\n")
+            f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
+        print(f"Created default {CHANNELS_FILE}")
 
     fetch_twitch_logo()
     threading.Thread(target=update_channels, daemon=True).start()
