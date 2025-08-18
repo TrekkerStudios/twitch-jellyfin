@@ -14,16 +14,17 @@ import glob
 # Load config from environment
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_OAUTH_TOKEN = os.getenv("TWITCH_OAUTH_TOKEN")
+TWITCH_USER_OAUTH = os.getenv("TWITCH_USER_OAUTH")
 TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL")
 UPDATE_INTERVAL = int(os.getenv("YOUTUBE_UPDATE_INTERVAL", "3600"))
-FFMPEG_URL = os.getenv("FFMPEG_URL", "http://0.0.0.0:8080/channel")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8090"))
-MAX_VIDEO_DURATION = int(os.getenv("MAX_VIDEO_DURATION", "3600"))  # seconds
-MAX_CACHE_FILES = int(os.getenv("MAX_CACHE_FILES", "50"))          # files
+MAX_VIDEO_DURATION = int(os.getenv("MAX_VIDEO_DURATION", "3600"))
+MAX_CACHE_FILES = int(os.getenv("MAX_CACHE_FILES", "50"))
 
 # Paths
 DATA_DIR = "/data"
 CACHE_DIR = os.path.join(DATA_DIR, "cache")
+HLS_DIR = os.path.join(DATA_DIR, "hls")
 PLAYLIST_FILE = os.path.join(DATA_DIR, "playlist.json")
 XMLTV_PATH = os.path.join(DATA_DIR, "guide.xml")
 M3U_PATH = os.path.join(DATA_DIR, "channel.m3u")
@@ -31,14 +32,13 @@ LOGO_PATH = os.path.join(DATA_DIR, "logo.jpg")
 CHANNELS_FILE = os.path.join(DATA_DIR, "channels.txt")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(HLS_DIR, exist_ok=True)
 
-# Track last modification time
 _last_channels_mtime = 0
 _cached_channels = []
 
 
 def normalize_channel(line: str) -> str:
-    """Normalize a channels.txt entry into a usable YouTube URL for yt-dlp."""
     line = line.strip()
     if not line:
         return None
@@ -67,7 +67,6 @@ def load_channels():
 
 
 def fetch_twitch_logo():
-    """Fetch Twitch channel profile image and save to /data/logo.jpg"""
     url = f"https://api.twitch.tv/helix/users?login={TWITCH_CHANNEL}"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
@@ -116,7 +115,6 @@ def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             out_file_template = os.path.join(CACHE_DIR, f"{video_id}.%(ext)s")
 
-            # Check if already cached
             matches = glob.glob(os.path.join(CACHE_DIR, f"{video_id}.*"))
             if not matches:
                 print(f"Downloading {video_url} to cache...")
@@ -174,43 +172,60 @@ def update_channels():
         time.sleep(UPDATE_INTERVAL)
 
 
-def is_twitch_live():
-    url = f"https://api.twitch.tv/helix/streams?user_login={TWITCH_CHANNEL}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_OAUTH_TOKEN}",
-    }
+def try_twitch():
+    cmd = [
+        "streamlink",
+        "--stream-url",
+        f"twitch.tv/{TWITCH_CHANNEL}",
+        "best"
+    ]
+    if TWITCH_USER_OAUTH:
+        cmd.insert(1, "--twitch-api-header")
+        cmd.insert(2, f"Authorization=OAuth {TWITCH_USER_OAUTH}")
     try:
-        r = requests.get(url, headers=headers).json()
-        print("Twitch API response:", r)  # <-- debug
-        return bool(r.get("data"))
-    except Exception as e:
-        print(f"Twitch check failed: {e}")
-        return False
+        twitch_url = subprocess.check_output(cmd).decode().strip()
+        return twitch_url
+    except subprocess.CalledProcessError:
+        return None
 
 
-def run_ffmpeg(input_src, is_twitch=False):
-    if is_twitch:
-        twitch_url = subprocess.check_output(
-            ["streamlink", "--stream-url", f"twitch.tv/{TWITCH_CHANNEL}", "best"]
-        ).decode().strip()
-        return subprocess.Popen(
-            [
-                "ffmpeg", "-re", "-i", twitch_url,
-                "-c:v", "libx264", "-preset", "veryfast",
-                "-c:a", "aac",
-                "-f", "mpegts", "-listen", "1",
-                FFMPEG_URL,
-            ]
-        )
+def run_ffmpeg(input_src, title="Unknown"):
+    # Clean old HLS files
+    for f in glob.glob(os.path.join(HLS_DIR, "*")):
+        os.remove(f)
 
     return subprocess.Popen(
         [
             "ffmpeg", "-re", "-i", input_src,
             "-c:v", "libx264", "-preset", "veryfast",
             "-c:a", "aac",
-            "-f", "mpegts", "-listen", "1",
-            FFMPEG_URL,
+            "-f", "hls",
+            "-hls_time", "5",
+            "-hls_list_size", "6",
+            "-hls_flags", "delete_segments+append_list",
+            "-hls_segment_filename", os.path.join(HLS_DIR, "segment_%03d.ts"),
+            os.path.join(HLS_DIR, "stream.m3u8")
+        ]
+    )
+
+
+def run_test_pattern():
+    for f in glob.glob(os.path.join(HLS_DIR, "*")):
+        os.remove(f)
+
+    return subprocess.Popen(
+        [
+            "ffmpeg",
+            "-f", "lavfi", "-i", "smptebars=size=1280x720:rate=30",
+            "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=44100",
+            "-c:v", "libx264", "-preset", "veryfast",
+            "-c:a", "aac",
+            "-f", "hls",
+            "-hls_time", "5",
+            "-hls_list_size", "6",
+            "-hls_flags", "delete_segments+append_list",
+            "-hls_segment_filename", os.path.join(HLS_DIR, "segment_%03d.ts"),
+            os.path.join(HLS_DIR, "stream.m3u8")
         ]
     )
 
@@ -224,7 +239,7 @@ def generate_m3u():
             f'#EXTINF:-1 tvg-id="{TWITCH_CHANNEL}" tvg-name="{channel_name}" '
             f'tvg-logo="{logo_url}" group-title="Twitch",{channel_name}\n'
         )
-        f.write(FFMPEG_URL + "\n")
+        f.write(f"http://{os.environ.get('HOSTNAME', 'localhost')}:{HTTP_PORT}/hls/stream.m3u8\n")
     print(f"Generated M3U for {channel_name}")
 
 
@@ -249,47 +264,16 @@ def write_xmltv(program_title, duration_minutes=60):
     print(f"Updated XMLTV: {program_title} on {channel_name}")
 
 
-def run_test_pattern():
-    print("No Twitch or YouTube videos available — serving test pattern...")
-    return subprocess.Popen(
-        [
-            "ffmpeg",
-            "-f", "lavfi", "-i", "smptebars=size=1280x720:rate=30",
-            "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=44100",
-            "-c:v", "libx264", "-preset", "veryfast",
-            "-c:a", "aac",
-            "-shortest",
-            "-f", "mpegts", "-listen", "1",
-            FFMPEG_URL,
-        ]
-    )
-    
-
-def try_twitch():
-    """Try to resolve Twitch stream with streamlink. Returns URL if live, else None."""
-    cmd = [
-        "streamlink",
-        "--stream-url",
-        f"twitch.tv/{TWITCH_CHANNEL}",
-        "best"
-    ]
-
-    # If user OAuth token is set, add it
-    user_oauth = os.getenv("TWITCH_USER_OAUTH")
-    if user_oauth:
-        cmd.insert(1, "--twitch-api-header")
-        cmd.insert(2, f"Authorization=OAuth {user_oauth}")
-
-    try:
-        twitch_url = subprocess.check_output(cmd).decode().strip()
-        return twitch_url
-    except subprocess.CalledProcessError as e:
-        print(f"Twitch not live or auth failed: {e}")
-        return None
-    
-
 def play_loop():
     while True:
+        twitch_url = try_twitch()
+        if twitch_url:
+            print("Twitch is live, switching...")
+            write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
+            proc = run_ffmpeg(twitch_url, title=f"Twitch Live: {TWITCH_CHANNEL}")
+            proc.wait()
+            continue
+
         if not os.path.exists(PLAYLIST_FILE):
             time.sleep(5)
             continue
@@ -298,7 +282,7 @@ def play_loop():
         videos = [v for vids in playlist.values() for v in vids]
         random.shuffle(videos)
 
-        if not videos and not try_twitch():
+        if not videos:
             write_xmltv("Test Pattern")
             proc = run_test_pattern()
             proc.wait()
@@ -307,16 +291,9 @@ def play_loop():
 
         for video in videos:
             try:
-                twitch_url = try_twitch()
-                if twitch_url:
-                    print("Twitch is live, switching...")
-                    write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
-                    proc = run_ffmpeg(twitch_url)
-                else:
-                    print(f"Playing YouTube VOD: {video['title']}")
-                    write_xmltv(f"YouTube: {video['title']}")
-                    proc = run_ffmpeg(video["file"])
-
+                print(f"Playing YouTube VOD: {video['title']}")
+                write_xmltv(f"YouTube: {video['title']}")
+                proc = run_ffmpeg(video["file"], title=video["title"])
                 proc.wait()
             except Exception as e:
                 print(f"Error in play loop: {e}")
@@ -327,11 +304,16 @@ def serve_files():
     os.chdir(DATA_DIR)
     handler = functools.partial(SimpleHTTPRequestHandler, directory=DATA_DIR)
     httpd = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), handler)
-    print(f"Serving M3U/XMLTV/logo on port {HTTP_PORT}")
+    print(f"Serving M3U/XMLTV/logo/HLS on port {HTTP_PORT}")
     httpd.serve_forever()
 
 
 if __name__ == "__main__":
+    if not os.path.exists(CHANNELS_FILE):
+        with open(CHANNELS_FILE, "w") as f:
+            f.write("# Add YouTube channel IDs or @handles here\n")
+        print("Created default channels.txt")
+
     fetch_twitch_logo()
     threading.Thread(target=update_channels, daemon=True).start()
     threading.Thread(target=serve_files, daemon=True).start()
