@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   twitch-jellyfin:
-    image: ghcr.io/trekkerstudios/twitch-jellyfin:latest
+    image: ghcr.io/trekkerstudios/twitch-jellyfin:main
     environment:
       - TWITCH_CLIENT_ID=your_client_id_here
       - TWITCH_OAUTH_TOKEN=your_app_oauth_token_here
