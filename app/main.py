@@ -37,7 +37,6 @@ YTDLP_FORMAT = os.getenv(
     "YTDLP_FORMAT",
     "bv*[vcodec~='(avc1|h264)']+ba[acodec~='(mp4a|aac)']/b[ext=mp4]/best",
 )
-
 DEBUG_FFMPEG = os.getenv("DEBUG_FFMPEG", "false").lower() in ("1", "true", "yes")
 
 # Paths
@@ -55,6 +54,7 @@ os.makedirs(HLS_DIR, exist_ok=True)
 
 _last_channels_mtime = 0
 _cached_channels = []
+
 
 # ====================
 # Utility / File I/O
@@ -101,13 +101,22 @@ def stop_process(proc: subprocess.Popen, name: str, timeout: float = 5.0):
         print(f"Failed to stop {name}: {e}")
 
 
+def wait_for_hls_ready(timeout_sec: int = 20) -> bool:
+    m3u8 = os.path.join(HLS_DIR, "stream.m3u8")
+    end = time.time() + timeout_sec
+    while time.time() < end:
+        if os.path.exists(m3u8) and os.path.getsize(m3u8) > 0:
+            return True
+        time.sleep(0.25)
+    return False
+
+
 # ====================
 # FFmpeg Runner
 # ====================
 
 
 def run_ffmpeg(args: list[str], name: str) -> subprocess.Popen:
-    """Run ffmpeg with optional debug logging."""
     if DEBUG_FFMPEG:
         full_args = ["ffmpeg", "-hide_banner", "-loglevel", "info"] + args
         print(f"[FFMPEG-DEBUG] Starting {name}: {' '.join(full_args)}")
@@ -165,6 +174,16 @@ def get_channel_name():
     return "Live Channel"
 
 
+def yt_video_meta(video_url: str) -> dict | None:
+    try:
+        js = subprocess.check_output(
+            ["yt-dlp", "-j", video_url], timeout=60
+        ).decode()
+        return json.loads(js)
+    except Exception:
+        return None
+
+
 def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
     cmd = [
         "yt-dlp",
@@ -172,40 +191,56 @@ def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
         "--flat-playlist",
         "--dump-json",
         "--playlist-end",
-        str(count * 3),
+        str(count * 5),
     ]
     try:
-        output = subprocess.check_output(cmd).decode().splitlines()
+        output = subprocess.check_output(cmd, timeout=90).decode().splitlines()
     except subprocess.CalledProcessError as e:
         print(f"yt-dlp failed for {channel_url}: {e}")
+        return []
+    except Exception as e:
+        print(f"yt-dlp error for {channel_url}: {e}")
         return []
 
     videos = []
     for line in output:
         try:
             data = json.loads(line)
+
+            # Skip live/upcoming
             if data.get("live_status") in ("is_live", "is_upcoming"):
                 continue
 
+            vid = data.get("id")
+            if not vid:
+                continue
+            url = f"https://www.youtube.com/watch?v={vid}"
+
+            # Get/confirm metadata if duration is missing
             duration = data.get("duration")
-            if not duration:
-                continue
+            title = data.get("title") or f"YouTube Video {vid}"
+            if duration is None:
+                meta = yt_video_meta(url)
+                if not meta:
+                    continue
+                duration = meta.get("duration")
+                title = meta.get("title") or title
+                # also catch live again just in case
+                if meta.get("live_status") in ("is_live", "is_upcoming"):
+                    continue
 
-            # Skip Shorts and videos under 2 minutes
-            if duration < 120:
+            # Filter: Shorts and < 2 minutes
+            if duration is None or duration < 120:
                 continue
-            if "shorts" in data.get("url", "").lower():
+            tl = (title or "").lower()
+            if "#shorts" in tl:
                 continue
-
             if duration > max_duration:
                 continue
 
-            vid = data["id"]
-            title = data.get("title", f"YouTube Video {vid}")
-            url = f"https://www.youtube.com/watch?v={vid}"
             out_tpl = os.path.join(CACHE_DIR, f"{vid}.%(ext)s")
-
             matches = glob.glob(os.path.join(CACHE_DIR, f"{vid}.*"))
+
             if not matches:
                 print(f"Downloading {url} to cache...")
                 try:
@@ -221,20 +256,25 @@ def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
                             url,
                         ],
                         check=True,
+                        timeout=0,  # no timeout; allow large files
                     )
                 except subprocess.CalledProcessError as e:
                     print(f"Failed to download {url}: {e}")
+                    continue
+                except Exception as e:
+                    print(f"yt-dlp download error for {url}: {e}")
                     continue
                 matches = glob.glob(os.path.join(CACHE_DIR, f"{vid}.*"))
 
             if matches:
                 videos.append({"title": title, "file": matches[0]})
+
+            if len(videos) >= count:
+                break
+
         except Exception as e:
             print(f"Error parsing yt-dlp output: {e}")
             continue
-
-        if len(videos) >= count:
-            break
 
     return videos
 
@@ -254,6 +294,7 @@ def cleanup_cache(max_files=MAX_CACHE_FILES):
 
 
 def update_channels():
+    # Refresh playlist continuously; write atomically
     while True:
         playlist = {}
         channels = load_channels()
@@ -276,26 +317,83 @@ def update_channels():
 # =============
 
 
-def fetch_twitch_logo():
-    if not (TWITCH_CLIENT_ID and TWITCH_OAUTH_TOKEN and TWITCH_CHANNEL):
-        return False
-    url = f"https://api.twitch.tv/helix/users?login={TWITCH_CHANNEL}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_OAUTH_TOKEN}",
-    }
+def _write_placeholder_logo():
+    # Generate a simple placeholder JPEG via ffmpeg
     try:
-        r = requests.get(url, headers=headers, timeout=15).json()
-        if "data" in r and r["data"]:
-            logo_url = r["data"][0]["profile_image_url"]
-            img = requests.get(logo_url, timeout=15).content
+        p = run_ffmpeg(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                "color=color=gray:size=300x300",
+                "-frames:v",
+                "1",
+                LOGO_PATH,
+            ],
+            "Placeholder logo",
+        )
+        p.wait(timeout=10)
+    except Exception:
+        # Last resort: write minimal JPEG bytes
+        tiny_jpeg = (
+            b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00"
+            b"\xff\xdb\x00C\x00" + b"\x08" * 64 + b"\xff\xc0\x00\x11\x08\x00\x01\x00\x01"
+            b"\x03\x01\x11\x00\x02\x11\x01\x03\x11\x01\xff\xc4\x00\x14\x00\x01\x00"
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xc4\x00"
+            b"\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            b"\x00\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00?\x00\xff\xd9"
+        )
+        try:
             with open(LOGO_PATH, "wb") as f:
-                f.write(img)
-            print(f"Downloaded Twitch logo: {logo_url}")
-            return True
-    except Exception as e:
-        print(f"Failed to fetch Twitch logo: {e}")
-    return False
+                f.write(tiny_jpeg)
+        except Exception:
+            pass
+
+
+def fetch_twitch_logo():
+    # Try Twitch Helix first (requires Client-ID and App token)
+    if TWITCH_CHANNEL:
+        try:
+            if TWITCH_CLIENT_ID and TWITCH_OAUTH_TOKEN:
+                url = f"https://api.twitch.tv/helix/users?login={TWITCH_CHANNEL}"
+                headers = {
+                    "Client-ID": TWITCH_CLIENT_ID,
+                    "Authorization": f"Bearer {TWITCH_OAUTH_TOKEN}",
+                }
+                r = requests.get(url, headers=headers, timeout=15)
+                r.raise_for_status()
+                data = r.json()
+                if data.get("data"):
+                    logo_url = data["data"][0]["profile_image_url"]
+                    img = requests.get(logo_url, timeout=15)
+                    img.raise_for_status()
+                    with open(LOGO_PATH, "wb") as f:
+                        f.write(img.content)
+                    print(f"Downloaded Twitch logo (Helix): {logo_url}")
+                    return True
+        except Exception as e:
+            print(f"Helix logo fetch failed: {e}")
+
+        # Fallback: decapi.me (no auth)
+        try:
+            r = requests.get(
+                f"https://decapi.me/twitch/avatar/{TWITCH_CHANNEL}", timeout=10
+            )
+            if r.ok:
+                logo_url = r.text.strip()
+                if logo_url.startswith("http"):
+                    img = requests.get(logo_url, timeout=15)
+                    img.raise_for_status()
+                    with open(LOGO_PATH, "wb") as f:
+                        f.write(img.content)
+                    print(f"Downloaded Twitch logo (decapi): {logo_url}")
+                    return True
+        except Exception as e:
+            print(f"decapi logo fetch failed: {e}")
+
+    print("Using placeholder logo")
+    _write_placeholder_logo()
+    return os.path.exists(LOGO_PATH) and os.path.getsize(LOGO_PATH) > 0
 
 
 def try_twitch():
@@ -375,6 +473,8 @@ def start_hls_segmenter() -> subprocess.Popen:
         "copy",
         "-f",
         "hls",
+        "-start_number",
+        "0",
         "-hls_time",
         str(HLS_TIME),
         "-hls_list_size",
@@ -485,18 +585,18 @@ def flatten_videos() -> list[dict]:
     return videos
 
 
-def play_loop():
-    current_feeder = None
+def play_loop(initial_feeder: subprocess.Popen | None = None):
+    current_feeder = initial_feeder
     last_program = None
 
     while True:
         try:
+            # Priority 1: Twitch (preempt immediately)
             twitch_url = try_twitch()
             if twitch_url:
                 if last_program != f"Twitch Live: {TWITCH_CHANNEL}":
                     write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
                     last_program = f"Twitch Live: {TWITCH_CHANNEL}"
-
                 stop_process(current_feeder, "feeder")
                 current_feeder = start_twitch_feeder(twitch_url)
 
@@ -509,40 +609,45 @@ def play_loop():
                         break
                 continue
 
+            # Priority 2: Cached YouTube VODs
             videos = flatten_videos()
-            if not videos:
-                if last_program != "Test Pattern":
-                    write_xmltv("Test Pattern")
-                    last_program = "Test Pattern"
-                if not current_feeder or current_feeder.poll() is not None:
+            if videos:
+                for video in videos:
+                    # Preempt if Twitch turns on before starting this VOD
+                    if try_twitch():
+                        break
+
+                    title = video.get("title", "YouTube VOD")
+                    path = video.get("file")
+                    if not path or not os.path.exists(path):
+                        continue
+
+                    if last_program != f"YouTube: {title}":
+                        write_xmltv(f"YouTube: {title}")
+                        last_program = f"YouTube: {title}"
+
                     stop_process(current_feeder, "feeder")
-                    current_feeder = start_test_feeder()
-                time.sleep(5)
+                    current_feeder = start_file_feeder(path)
+
+                    # While playing VOD, keep checking Twitch
+                    while True:
+                        time.sleep(3)
+                        if try_twitch():
+                            stop_process(current_feeder, "file feeder")
+                            break
+                        if current_feeder.poll() is not None:
+                            break
                 continue
 
-            for video in videos:
-                if try_twitch():
-                    break
-
-                title = video.get("title", "YouTube VOD")
-                path = video.get("file")
-                if not path or not os.path.exists(path):
-                    continue
-
-                if last_program != f"YouTube: {title}":
-                    write_xmltv(f"YouTube: {title}")
-                    last_program = f"YouTube: {title}"
-
+            # Priority 3: Color bars test pattern
+            if last_program != "Test Pattern":
+                write_xmltv("Test Pattern")
+                last_program = "Test Pattern"
+            if not current_feeder or current_feeder.poll() is not None:
                 stop_process(current_feeder, "feeder")
-                current_feeder = start_file_feeder(path)
+                current_feeder = start_test_feeder()
+            time.sleep(5)
 
-                while True:
-                    time.sleep(3)
-                    if try_twitch():
-                        stop_process(current_feeder, "file feeder")
-                        break
-                    if current_feeder.poll() is not None:
-                        break
         except Exception as e:
             print(f"Error in play loop: {e}")
             time.sleep(5)
@@ -561,17 +666,27 @@ if __name__ == "__main__":
             f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
         print(f"Created default {CHANNELS_FILE}")
 
-    fetch_twitch_logo()
-    threading.Thread(target=update_channels, daemon=True).start()
+    # HTTP server first so logo/M3U are reachable
     threading.Thread(target=serve_files, daemon=True).start()
-    generate_m3u()
 
+    # Logo (robust with fallbacks)
+    fetch_twitch_logo()
+
+    # FIFO + HLS: start reader then seed with color bars for immediate availability
     ensure_fifo(INPUT_FIFO)
     hls_proc = start_hls_segmenter()
     seed_feeder = start_test_feeder()
+    if not wait_for_hls_ready(20):
+        print("Warning: HLS playlist not ready yet")
+
+    # Publish playlist/guide
+    generate_m3u()
+
+    # Start YouTube refresher
+    threading.Thread(target=update_channels, daemon=True).start()
 
     try:
-        play_loop()
+        play_loop(initial_feeder=seed_feeder)
     finally:
         stop_process(seed_feeder, "seed feeder")
         stop_process(hls_proc, "hls segmenter")
