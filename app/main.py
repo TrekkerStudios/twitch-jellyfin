@@ -256,7 +256,7 @@ def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
                             url,
                         ],
                         check=True,
-                        timeout=0,  # no timeout; allow large files
+                        timeout=600,
                     )
                 except subprocess.CalledProcessError as e:
                     print(f"Failed to download {url}: {e}")
@@ -666,23 +666,25 @@ if __name__ == "__main__":
             f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
         print(f"Created default {CHANNELS_FILE}")
 
-    # HTTP server first so logo/M3U are reachable
     threading.Thread(target=serve_files, daemon=True).start()
-
-    # Logo (robust with fallbacks)
     fetch_twitch_logo()
 
-    # FIFO + HLS: start reader then seed with color bars for immediate availability
     ensure_fifo(INPUT_FIFO)
-    hls_proc = start_hls_segmenter()
+
+    # Start test pattern feeder first
     seed_feeder = start_test_feeder()
+
+    # Then start HLS segmenter
+    hls_proc = start_hls_segmenter()
+
+    # Wait until HLS playlist exists
     if not wait_for_hls_ready(20):
         print("Warning: HLS playlist not ready yet")
 
-    # Publish playlist/guide
+    # Generate M3U and XMLTV immediately
     generate_m3u()
+    write_xmltv("Test Pattern")
 
-    # Start YouTube refresher
     threading.Thread(target=update_channels, daemon=True).start()
 
     try:
