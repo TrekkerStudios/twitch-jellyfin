@@ -11,7 +11,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import functools
 import glob
 import tempfile
-import shutil
 import stat
 
 # =========
@@ -34,11 +33,12 @@ CHANNEL_DISPLAY_NAME = os.getenv("CHANNEL_DISPLAY_NAME")
 INPUT_FIFO = os.getenv("INPUT_FIFO", "/data/input_fifo")
 HLS_TIME = int(os.getenv("HLS_TIME", "5"))
 HLS_LIST_SIZE = int(os.getenv("HLS_LIST_SIZE", "6"))
-# Prefer H.264/AAC so the HLS segmenter can "copy" without re-encoding
 YTDLP_FORMAT = os.getenv(
     "YTDLP_FORMAT",
     "bv*[vcodec~='(avc1|h264)']+ba[acodec~='(mp4a|aac)']/b[ext=mp4]/best",
 )
+
+DEBUG_FFMPEG = os.getenv("DEBUG_FFMPEG", "false").lower() in ("1", "true", "yes")
 
 # Paths
 DATA_DIR = "/data"
@@ -102,6 +102,25 @@ def stop_process(proc: subprocess.Popen, name: str, timeout: float = 5.0):
 
 
 # ====================
+# FFmpeg Runner
+# ====================
+
+
+def run_ffmpeg(args: list[str], name: str) -> subprocess.Popen:
+    """Run ffmpeg with optional debug logging."""
+    if DEBUG_FFMPEG:
+        full_args = ["ffmpeg", "-hide_banner", "-loglevel", "info"] + args
+        print(f"[FFMPEG-DEBUG] Starting {name}: {' '.join(full_args)}")
+        return subprocess.Popen(full_args)
+    else:
+        full_args = ["ffmpeg", "-hide_banner", "-loglevel", "error"] + args
+        print(f"[FFMPEG] Starting {name}")
+        return subprocess.Popen(
+            full_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+
+# ====================
 # Channels + YouTube
 # ====================
 
@@ -125,8 +144,12 @@ def load_channels():
         mtime = os.path.getmtime(CHANNELS_FILE)
         if mtime != _last_channels_mtime:
             with open(CHANNELS_FILE) as f:
-                raw_lines = [line.strip() for line in f if line.strip()]
-            _cached_channels = [normalize_channel(line) for line in raw_lines]
+                raw_lines = [
+                    line.strip()
+                    for line in f
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+            _cached_channels = [normalize_channel(line) for line in raw_lines if line]
             _last_channels_mtime = mtime
             print(f"Reloaded channels.txt: {_cached_channels}")
     except FileNotFoundError:
@@ -221,7 +244,6 @@ def cleanup_cache(max_files=MAX_CACHE_FILES):
 
 
 def update_channels():
-    # Continually refresh the playlist. Writes atomically.
     while True:
         playlist = {}
         channels = load_channels()
@@ -328,13 +350,7 @@ def generate_m3u():
 
 
 def start_hls_segmenter() -> subprocess.Popen:
-    # One persistent ffmpeg process that reads FIFO and writes HLS.
-    # We segment with copy (no re-encode) for stability and low CPU.
     args = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
         "-fflags",
         "+genpts",
         "-i",
@@ -359,17 +375,11 @@ def start_hls_segmenter() -> subprocess.Popen:
         os.path.join(HLS_DIR, "segment_%09d.ts"),
         os.path.join(HLS_DIR, "stream.m3u8"),
     ]
-    print("Starting HLS segmenter...")
-    return subprocess.Popen(args)
+    return run_ffmpeg(args, "HLS segmenter")
 
 
 def start_test_feeder() -> subprocess.Popen:
-    # Feeds a stable test pattern into FIFO in H264/AAC (mpegts).
     args = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
         "-re",
         "-f",
         "lavfi",
@@ -402,17 +412,11 @@ def start_test_feeder() -> subprocess.Popen:
         "mpegts",
         INPUT_FIFO,
     ]
-    print("Starting TEST feeder...")
-    return subprocess.Popen(args)
+    return run_ffmpeg(args, "Test feeder")
 
 
 def start_twitch_feeder(twitch_url: str) -> subprocess.Popen:
-    # Re-mux Twitch HLS into mpegts with copy.
     args = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
         "-re",
         "-i",
         twitch_url,
@@ -428,18 +432,11 @@ def start_twitch_feeder(twitch_url: str) -> subprocess.Popen:
         "mpegts",
         INPUT_FIFO,
     ]
-    print("Starting TWITCH feeder...")
-    return subprocess.Popen(args)
+    return run_ffmpeg(args, "Twitch feeder")
 
 
 def start_file_feeder(path: str) -> subprocess.Popen:
-    # Re-mux local file (prefer h264/aac) to mpegts with copy.
-    # If codecs are incompatible, ffmpeg will error out - keep YTDLP_FORMAT h264/aac.
     args = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
         "-re",
         "-i",
         path,
@@ -455,8 +452,7 @@ def start_file_feeder(path: str) -> subprocess.Popen:
         "mpegts",
         INPUT_FIFO,
     ]
-    print(f"Starting FILE feeder: {path}")
-    return subprocess.Popen(args)
+    return run_ffmpeg(args, f"File feeder ({path})")
 
 
 def serve_files():
@@ -480,13 +476,11 @@ def flatten_videos() -> list[dict]:
 
 
 def play_loop():
-    # Ensure we always have a feeder running into the FIFO.
     current_feeder = None
     last_program = None
 
     while True:
         try:
-            # Priority: Twitch
             twitch_url = try_twitch()
             if twitch_url:
                 if last_program != f"Twitch Live: {TWITCH_CHANNEL}":
@@ -496,27 +490,20 @@ def play_loop():
                 stop_process(current_feeder, "feeder")
                 current_feeder = start_twitch_feeder(twitch_url)
 
-                # While Twitch is live, keep feeding; poll for offline
                 while True:
                     time.sleep(5)
                     if current_feeder.poll() is not None:
-                        # Twitch feeder ended (network/etc.), break to re-evaluate
                         break
-                    # If twitch goes offline, streamlink will soon fail.
-                    # Double-check proactively:
                     if not try_twitch():
                         stop_process(current_feeder, "twitch feeder")
                         break
-                continue  # Back to top, re-check sources
+                continue
 
-            # Fallback: YouTube VOD rotation
             videos = flatten_videos()
             if not videos:
-                # Keep test pattern alive
                 if last_program != "Test Pattern":
                     write_xmltv("Test Pattern")
                     last_program = "Test Pattern"
-                # Ensure we have some feeder
                 if not current_feeder or current_feeder.poll() is not None:
                     stop_process(current_feeder, "feeder")
                     current_feeder = start_test_feeder()
@@ -524,7 +511,6 @@ def play_loop():
                 continue
 
             for video in videos:
-                # If Twitch goes live before we start this VOD, switch
                 if try_twitch():
                     break
 
@@ -540,18 +526,13 @@ def play_loop():
                 stop_process(current_feeder, "feeder")
                 current_feeder = start_file_feeder(path)
 
-                # Wait until file feeder exits (end of file) or twitch goes live
                 while True:
                     time.sleep(3)
-                    # Twitch live? switch immediately
                     if try_twitch():
                         stop_process(current_feeder, "file feeder")
                         break
-                    # Feeder finished this file
                     if current_feeder.poll() is not None:
                         break
-
-            # Loop back to re-evaluate Twitch vs VOD
         except Exception as e:
             print(f"Error in play loop: {e}")
             time.sleep(5)
@@ -570,18 +551,13 @@ if __name__ == "__main__":
             f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
         print(f"Created default {CHANNELS_FILE}")
 
-    # Basic assets/server
     fetch_twitch_logo()
     threading.Thread(target=update_channels, daemon=True).start()
     threading.Thread(target=serve_files, daemon=True).start()
     generate_m3u()
 
-    # Prepare FIFO + HLS segmenter
     ensure_fifo(INPUT_FIFO)
-    # Do NOT wipe HLS_DIR; let segmenter rotate segments in place
     hls_proc = start_hls_segmenter()
-
-    # Seed with test pattern so Jellyfin can tune immediately
     seed_feeder = start_test_feeder()
 
     try:

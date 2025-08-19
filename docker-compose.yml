@@ -17,6 +17,7 @@ services:
       - HLS_TIME=5
       - HLS_LIST_SIZE=6
       - YTDLP_FORMAT=bv*[vcodec~='(avc1|h264)']+ba[acodec~='(mp4a|aac)']/b[ext=mp4]/best
+      - DEBUG_FFMPEG=false
     volumes:
       - ./data:/data
     ports:
