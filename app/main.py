@@ -186,8 +186,18 @@ def fetch_latest_videos(channel_url, count=5, max_duration=MAX_VIDEO_DURATION):
             data = json.loads(line)
             if data.get("live_status") in ("is_live", "is_upcoming"):
                 continue
+
             duration = data.get("duration")
-            if duration and duration > max_duration:
+            if not duration:
+                continue
+
+            # Skip Shorts and videos under 2 minutes
+            if duration < 120:
+                continue
+            if "shorts" in data.get("url", "").lower():
+                continue
+
+            if duration > max_duration:
                 continue
 
             vid = data["id"]
