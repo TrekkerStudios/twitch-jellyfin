@@ -30,7 +30,13 @@ EXTERNAL_HOST_IP = os.getenv("EXTERNAL_HOST_IP", "localhost")
 CHANNEL_DISPLAY_NAME = os.getenv("CHANNEL_DISPLAY_NAME")
 
 # New/adjustable
-INPUT_FIFO = os.getenv("INPUT_FIFO", "/data/input_fifo")
+if os.getenv("CONTAINER_CONTEXT") == "true":
+    DATA_DIR = "/data"
+    DEFAULT_INPUT_FIFO = "/data/input_fifo"
+else:
+    DATA_DIR = "data"
+    DEFAULT_INPUT_FIFO = "data/input_fifo"
+INPUT_FIFO = os.getenv("INPUT_FIFO", DEFAULT_INPUT_FIFO)
 HLS_TIME = int(os.getenv("HLS_TIME", "5"))
 HLS_LIST_SIZE = int(os.getenv("HLS_LIST_SIZE", "6"))
 YTDLP_FORMAT = os.getenv(
@@ -40,7 +46,6 @@ YTDLP_FORMAT = os.getenv(
 DEBUG_FFMPEG = os.getenv("DEBUG_FFMPEG", "false").lower() in ("1", "true", "yes")
 
 # Paths
-DATA_DIR = "/data"
 CACHE_DIR = os.path.join(DATA_DIR, "cache")
 HLS_DIR = os.path.join(DATA_DIR, "hls")
 PLAYLIST_FILE = os.path.join(DATA_DIR, "playlist.json")
@@ -51,6 +56,15 @@ CHANNELS_FILE = os.path.join(DATA_DIR, "channels.txt")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(HLS_DIR, exist_ok=True)
+
+# Ensure channels.txt exists
+if not os.path.exists(CHANNELS_FILE):
+    with open(CHANNELS_FILE, "w") as f:
+        f.write("# Add YouTube channel IDs, @handles, or full channel URLs here\n")
+        f.write("# One per line, e.g.:\n")
+        f.write("# @LinusTechTips\n")
+        f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
+    print(f"Created default {CHANNELS_FILE}")
 
 _last_channels_mtime = 0
 _cached_channels = []
@@ -414,7 +428,7 @@ def try_twitch():
 
 def write_xmltv(program_title, duration_minutes=60):
     channel_name = get_channel_name()
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     start = now.strftime("%Y%m%d%H%M%S +0000")
     stop = (now + datetime.timedelta(minutes=duration_minutes)).strftime(
         "%Y%m%d%H%M%S +0000"
@@ -566,7 +580,6 @@ def start_file_feeder(path: str) -> subprocess.Popen:
 
 
 def serve_files():
-    os.chdir(DATA_DIR)
     handler = functools.partial(SimpleHTTPRequestHandler, directory=DATA_DIR)
     httpd = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), handler)
     print(f"Serving M3U/XMLTV/logo/HLS on port {HTTP_PORT}")
@@ -658,14 +671,6 @@ def play_loop(initial_feeder: subprocess.Popen | None = None):
 # =========
 
 if __name__ == "__main__":
-    if not os.path.exists(CHANNELS_FILE):
-        with open(CHANNELS_FILE, "w") as f:
-            f.write("# Add YouTube channel IDs, @handles, or full channel URLs here\n")
-            f.write("# One per line, e.g.:\n")
-            f.write("# @LinusTechTips\n")
-            f.write("# https://www.youtube.com/channel/UC-lHJZR3Gqxm24_Vd_D_aWg\n")
-        print(f"Created default {CHANNELS_FILE}")
-
     threading.Thread(target=serve_files, daemon=True).start()
     fetch_twitch_logo()
 

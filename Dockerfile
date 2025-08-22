@@ -10,6 +10,6 @@ COPY app/ /app/
 
 RUN pip install -r requirements.txt
 
-VOLUME ["/data", "/channels.txt"]
+ENV CONTAINER_CONTEXT=true
 
 CMD ["python", "main.py"]
