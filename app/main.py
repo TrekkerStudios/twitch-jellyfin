@@ -539,11 +539,17 @@ def start_test_feeder() -> subprocess.Popen:
     return run_ffmpeg(args, "Test feeder")
 
 
-def start_twitch_feeder(twitch_url: str) -> subprocess.Popen:
-    args = [
+def start_twitch_feeder(channel: str) -> subprocess.Popen:
+    # Use streamlink to pipe Twitch stream into ffmpeg
+    streamlink_cmd = ["streamlink", "-O", f"twitch.tv/{channel}", "best"]
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
         "-re",
         "-i",
-        twitch_url,
+        "pipe:0",
         "-map",
         "0:v:0?",
         "-map",
@@ -556,7 +562,9 @@ def start_twitch_feeder(twitch_url: str) -> subprocess.Popen:
         "mpegts",
         INPUT_FIFO,
     ]
-    return run_ffmpeg(args, "Twitch feeder")
+    print(f"[FFMPEG] Starting Twitch feeder (via streamlink pipe)")
+    streamlink_proc = subprocess.Popen(streamlink_cmd, stdout=subprocess.PIPE)
+    return subprocess.Popen(ffmpeg_cmd, stdin=streamlink_proc.stdout)
 
 
 def start_file_feeder(path: str) -> subprocess.Popen:
@@ -611,7 +619,7 @@ def play_loop(initial_feeder: subprocess.Popen | None = None):
                     write_xmltv(f"Twitch Live: {TWITCH_CHANNEL}")
                     last_program = f"Twitch Live: {TWITCH_CHANNEL}"
                 stop_process(current_feeder, "feeder")
-                current_feeder = start_twitch_feeder(twitch_url)
+                current_feeder = start_twitch_feeder(TWITCH_CHANNEL)
 
                 while True:
                     time.sleep(5)
