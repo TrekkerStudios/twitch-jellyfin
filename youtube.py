@@ -8,7 +8,10 @@ import state
 from utils import load_config
 
 # Setup yt-dlp debug logger
-log_path = os.path.join(config.BASE_DIR, "yt_dlp_debug.log")
+log_dir = os.path.join(config.BASE_DIR, "tmp")
+os.makedirs(log_dir, exist_ok=True)  # make sure tmp/ exists
+log_path = os.path.join(log_dir, "yt_dlp_debug.log")
+
 logging.basicConfig(
     filename=log_path,
     level=logging.DEBUG,
