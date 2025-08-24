@@ -1,2 +1,5 @@
 .venv
 data/
+__pycache__/
+tmp/
+twitch_token.json
