@@ -1,0 +1,13 @@
+[Unit]
+Description=Twitch to Jellyfin
+After=network.target
+
+[Service]
+User=<YOUR_USER>
+Group=<YOUR_GROUP>
+WorkingDirectory=/path/to/twitch-jellyfin
+ExecStart=/path/to/twitch-jellyfin/.venv/bin/python main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

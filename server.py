@@ -1,12 +1,18 @@
 import os
 import time
-from flask import Flask, send_from_directory, request, redirect
+from flask import Flask, send_from_directory, request, redirect, url_for
+from werkzeug.utils import secure_filename
 import config
 import state
-from utils import load_config, save_config
+from utils import load_config, save_config, get_twitch_user_info
 from youtube import fetch_youtube_videos
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'static/logos'
+
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory('static', filename)
 
 @app.route("/<path:filename>")
 def hls_root(filename):
@@ -18,41 +24,90 @@ def stream():
 
 @app.route("/playlist.m3u")
 def playlist():
-    return f"#EXTM3U\n#EXTINF:-1,{config.CHANNEL} Live\nhttp://localhost:3000/stream.m3u8\n"
+    cfg = load_config()
+    return f"#EXTM3U\n#EXTINF:-1,{cfg['channel_name']} Live\nhttp://localhost:3000/stream.m3u8\n"
 
 @app.route("/guide.xml")
 def guide():
+    cfg = load_config()
     now = time.strftime("%Y%m%d%H%M%S")
+    logo_url = cfg.get("channel_logo", '')
+    if cfg.get("custom_logo"):
+        logo_url = request.host_url.rstrip('/') + logo_url
+
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <tv>
   <channel id="twitch">
-    <display-name>{config.CHANNEL} Live</display-name>
+    <display-name>{cfg['channel_name']}</display-name>
+    <icon src="{logo_url}"/>
   </channel>
   <programme start="{now}" channel="twitch">
     <title>{state.current_source.title() if state.current_source else "Unknown"} Content</title>
   </programme>
 </tv>"""
 
+@app.route("/revert_branding")
+def revert_branding():
+    cfg = load_config()
+    info = get_twitch_user_info(cfg["twitch_channel"])
+    if info:
+        cfg["channel_name"] = info["display_name"]
+        cfg["channel_logo"] = info["profile_image_url"]
+        cfg["custom_logo"] = False
+        save_config(cfg)
+    return redirect("/")
+
 @app.route("/status")
 def status():
-    return {"channel": config.CHANNEL, "source": state.current_source}
+    cfg = load_config()
+    return {"channel": cfg["twitch_channel"], "source": state.current_source}
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     cfg = load_config()
     if request.method == "POST":
-        new_channel = request.form.get("yt_channel")
-        if new_channel and new_channel not in cfg["youtube_channels"]:
-            cfg["youtube_channels"].append(new_channel)
+        # YouTube Channel Add
+        new_yt_channel = request.form.get("yt_channel")
+        if new_yt_channel and new_yt_channel not in cfg["youtube_channels"]:
+            cfg["youtube_channels"].append(new_yt_channel)
             save_config(cfg)
+
+        # Twitch Channel Change
+        new_twitch_channel = request.form.get("twitch_channel")
+        if new_twitch_channel and new_twitch_channel != cfg["twitch_channel"]:
+            cfg["twitch_channel"] = new_twitch_channel
+            info = get_twitch_user_info(new_twitch_channel)
+            if info:
+                cfg["channel_name"] = info["display_name"]
+                cfg["channel_logo"] = info["profile_image_url"]
+                cfg["custom_logo"] = False
+            save_config(cfg)
+
+        # Channel Branding Change
+        new_channel_name = request.form.get("channel_name")
+        if new_channel_name and new_channel_name != cfg["channel_name"]:
+            cfg["channel_name"] = new_channel_name
+            save_config(cfg)
+
+        # Logo Upload
+        if 'channel_logo' in request.files:
+            logo = request.files['channel_logo']
+            if logo.filename != '':
+                filename = secure_filename(logo.filename)
+                logo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                logo.save(logo_path)
+                cfg["channel_logo"] = url_for('static_files', filename=f'logos/{filename}')
+                cfg["custom_logo"] = True
+                save_config(cfg)
+
         return redirect("/")
 
     yt_list = ""
     for ch in cfg.get("youtube_channels", []):
         yt_list += f"""
-        <li class="list-item">
+        <li class='list-item'>
             <span>{ch}</span>
-            <a href='/remove_channel/{ch}' class="btn btn-danger">Remove</a>
+            <a href='/remove_channel/{ch}' class='btn btn-danger'>Remove</a>
         </li>
         """
     yt_list = f"<ul class='list'>{yt_list}</ul>" if yt_list else "<p>No channels added.</p>"
@@ -62,6 +117,10 @@ def index():
          f"<a href='{m['url']}' target='_blank' class='btn btn-link'>Watch</a></li>"
          for m in state.youtube_meta]
     ) if state.youtube_meta else "<p>No videos cached.</p>"
+
+    logo_url = cfg.get("channel_logo", '')
+    if cfg.get("custom_logo"):
+        logo_url = url_for('static_files', filename=os.path.basename(logo_url))
 
     return f"""
     <!DOCTYPE html>
@@ -98,7 +157,8 @@ def index():
         .list-item {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #333; }}
         .list-item:last-child {{ border-bottom: none; }}
         form {{ margin-top: 10px; }}
-        input[type="text"], input[name="yt_channel"] {{ padding: 6px; font-size: 0.9em; border: 1px solid #444; border-radius: 4px; width: 70%; background: #222; color: #eee; }}
+        input[type="text"], input[name="yt_channel"], input[name="twitch_channel"], input[name="channel_name"] {{ padding: 6px; font-size: 0.9em; border: 1px solid #444; border-radius: 4px; width: 70%; background: #222; color: #eee; }}
+        .logo-preview {{ max-width: 50px; max-height: 50px; border-radius: 50%; margin-right: 10px; }}
       </style>
     </head>
     <body>
@@ -111,6 +171,21 @@ def index():
           <a href='/guide.xml' class="btn btn-secondary">XMLTV Guide</a>
           <a href='/status' class="btn btn-secondary">Status JSON</a>
         </div>
+
+        <h3>Settings</h3>
+        <form method="POST" class="d-flex mt-2">
+          <input name="twitch_channel" placeholder="Twitch Channel" value="{cfg['twitch_channel']}">
+          <button type="submit" class="btn btn-success">Save</button>
+        </form>
+
+        <h3>Channel Branding</h3>
+        <form method="POST" enctype="multipart/form-data">
+            <img src="{logo_url}" class="logo-preview">
+            <input type="text" name="channel_name" placeholder="Channel Name" value="{cfg['channel_name']}">
+            <input type="file" name="channel_logo">
+            <button type="submit" class="btn btn-success">Save Branding</button>
+            <a href="/revert_branding" class="btn btn-warning">Revert to Default</a>
+        </form>
 
         <h3>YouTube Channels</h3>
         {yt_list}

@@ -4,7 +4,7 @@ import os
 from streamlink import Streamlink
 import config
 import state
-from utils import stop_writer
+from utils import stop_writer, load_config
 from youtube import build_youtube_playlist
 
 def start_ffmpeg():
@@ -24,11 +24,11 @@ def start_ffmpeg():
     subprocess.Popen(ffmpeg_cmd, stdout=log_file, stderr=log_file)
     print("🎬 Persistent FFmpeg started (logs → ffmpeg.log)")
 
-def write_twitch():
+def write_twitch(channel):
     stop_writer()
-    print("🔴 Writing Twitch stream...")
+    print(f"🔴 Writing Twitch stream for {channel}...")
     session = Streamlink()
-    streams = session.streams(f"https://twitch.tv/{config.CHANNEL}")
+    streams = session.streams(f"https://twitch.tv/{channel}")
     if "best" not in streams:
         print("⚠️ Twitch channel offline.")
         return False
@@ -75,7 +75,7 @@ def write_fallback():
     state.current_source = "fallback"
     return True
 
-def graceful_switch(new_source):
+def graceful_switch(new_source, channel=None):
     """Insert fallback for a few seconds before switching sources"""
     print("🟨 Graceful switch: inserting fallback...")
     write_fallback()
@@ -83,7 +83,7 @@ def graceful_switch(new_source):
 
     if new_source == "twitch":
         print("🔄 Switching to Twitch...")
-        write_twitch()
+        write_twitch(channel)
     elif new_source == "youtube":
         print("🔄 Switching to YouTube filler...")
         write_youtube()
@@ -93,16 +93,18 @@ def graceful_switch(new_source):
 
 def orchestrator():
     while True:
+        cfg = load_config()
+        channel = cfg.get("twitch_channel", "ludwig")
         live = False
         try:
             session = Streamlink()
-            streams = session.streams(f"https://twitch.tv/{config.CHANNEL}")
+            streams = session.streams(f"https://twitch.tv/{channel}")
             live = "best" in streams
         except Exception:
             live = False
 
         if live and state.current_source != "twitch":
-            graceful_switch("twitch")
+            graceful_switch("twitch", channel=channel)
         elif not live:
             if state.youtube_cache and state.current_source != "youtube":
                 graceful_switch("youtube")

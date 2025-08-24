@@ -4,11 +4,13 @@ import json
 import time
 import state
 import config
+import requests
 
 def cleanup():
     """Ensure dirs exist and clear old files"""
     os.makedirs(config.HLS_DIR, exist_ok=True)
     os.makedirs(config.YOUTUBE_DIR, exist_ok=True)
+    os.makedirs(os.path.join("static", "logos"), exist_ok=True)
 
     for f in os.listdir(config.HLS_DIR):
         os.remove(os.path.join(config.HLS_DIR, f))
@@ -22,11 +24,44 @@ def cleanup():
 
     print("🧹 Cleanup complete. Fresh HLS dir, pipe, and log file ready.")
 
+def get_twitch_user_info(username):
+    """Fetch Twitch user info, including profile picture."""
+    try:
+        # This is a placeholder, as Twitch API requires authentication.
+        # In a real scenario, you would use the Twitch API with OAuth.
+        # For now, we'll simulate a response.
+        print(f"Simulating API call for {username}")
+        return {
+            "display_name": username.capitalize(),
+            "profile_image_url": f"https://via.placeholder.com/150/0000FF/FFFFFF?text={username}"
+        }
+    except Exception as e:
+        print(f"Error fetching Twitch user info: {e}")
+        return None
+
 def load_config():
     if not os.path.exists(config.CONFIG_FILE):
-        return {"youtube_channels": []}
+        info = get_twitch_user_info("ludwig")
+        return {
+            "youtube_channels": [],
+            "twitch_channel": "ludwig",
+            "channel_name": info["display_name"] if info else "ludwig",
+            "channel_logo": info["profile_image_url"] if info else None,
+            "custom_logo": False
+        }
     with open(config.CONFIG_FILE) as f:
-        return json.load(f)
+        cfg = json.load(f)
+        if "twitch_channel" not in cfg:
+            cfg["twitch_channel"] = "ludwig"
+        if "channel_name" not in cfg or not cfg.get("channel_name"):
+            info = get_twitch_user_info(cfg["twitch_channel"])
+            cfg["channel_name"] = info["display_name"] if info else cfg["twitch_channel"]
+        if "channel_logo" not in cfg or not cfg.get("channel_logo"):
+            info = get_twitch_user_info(cfg["twitch_channel"])
+            cfg["channel_logo"] = info["profile_image_url"] if info else None
+        if "custom_logo" not in cfg:
+            cfg["custom_logo"] = False
+        return cfg
 
 def save_config(cfg):
     with open(config.CONFIG_FILE, "w") as f:
