@@ -55,12 +55,7 @@
 
       <!-- Channel List -->
       <div class="channel-list">
-        {% for ch in yt_list %}
-        <div class="channel-item">
-          <span>{{ ch.name or ch.id }}</span>
-          <a href="/remove_channel/{{ ch.id }}">Remove</a>
-        </div>
-        {% endfor %}
+        {{ yt_list|safe }}
       </div>
 
       <!-- Add Channel -->

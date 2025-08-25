@@ -100,13 +100,8 @@ input[type="file"] {
 }
 
 /* Right column lists */
-.channel-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-.channel-item {
+/* Channel list items */
+.channel-list > * {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -115,13 +110,20 @@ input[type="file"] {
   border-radius: 6px;
   font-size: 0.9rem;
 }
-.channel-item a {
-  color: #f87171; /* red for remove */
-  font-size: 0.8rem;
+
+/* Remove button style */
+.channel-list a {
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-weight: 600;
   text-decoration: none;
+  transition: background 0.2s;
 }
-.channel-item a:hover {
-  text-decoration: underline;
+.channel-list a:hover {
+  background: #b91c1c;
 }
 
 /* Button groups */
