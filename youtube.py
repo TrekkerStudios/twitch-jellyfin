@@ -37,6 +37,10 @@ def fetch_youtube_videos(channels, max_videos=5):
         "progress_hooks": [lambda d: logging.info(f"yt-dlp: {d}")],
     }
 
+    cookie_file = os.path.join(config.BASE_DIR, 'cookies.txt')
+    if os.path.exists(cookie_file):
+        ydl_opts['cookiefile'] = cookie_file
+
     ydl = YoutubeDL(ydl_opts)
     downloaded, meta = [], []
 

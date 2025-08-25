@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>twitch-jellyfin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/css/iziToast.min.css">
+</head>
+<body class="bg-gray-900 text-gray-200 font-sans">
+    <div class="container mx-auto max-w-3xl mt-8">
+        {% block content %}{% endblock %}
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/js/iziToast.min.js"></script>
+    <script>
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                iziToast.success({
+                    title: 'OK',
+                    message: 'Copied to clipboard!',
+                    position: 'topRight',
+                    backgroundColor: '#1a202c',
+                    titleColor: '#a0aec0',
+                    messageColor: '#a0aec0',
+                    iconColor: '#a0aec0'
+                });
+            }, function(err) {
+                iziToast.error({
+                    title: 'Error',
+                    message: 'Could not copy text: ' + err,
+                    position: 'topRight'
+                });
+            });
+        }
+    </script>
+</body>
+</html>

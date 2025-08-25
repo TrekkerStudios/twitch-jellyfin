@@ -1,13 +1,13 @@
 import os
 import time
-from flask import Flask, send_from_directory, request, redirect, url_for
+from flask import Flask, send_from_directory, request, redirect, url_for, render_template
 from werkzeug.utils import secure_filename
 import config
 import state
 from utils import load_config, save_config, get_twitch_user_info
 from youtube import fetch_youtube_videos
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 app.config['UPLOAD_FOLDER'] = 'static/logos'
 
 @app.route("/static/<path:filename>")
@@ -25,7 +25,8 @@ def stream():
 @app.route("/playlist.m3u")
 def playlist():
     cfg = load_config()
-    return f"#EXTM3U\n#EXTINF:-1,{cfg['channel_name']} Live\nhttp://localhost:3000/stream.m3u8\n"
+    base_url = request.host_url.rstrip('/')
+    return f"#EXTM3U\n#EXTINF:-1,{cfg['channel_name']} Live\n{base_url}/stream.m3u8\n"
 
 @app.route("/guide.xml")
 def guide():
@@ -35,13 +36,13 @@ def guide():
     if cfg.get("custom_logo"):
         logo_url = request.host_url.rstrip('/') + logo_url
 
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
+    return f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <tv>
-  <channel id="twitch">
+  <channel id=\"twitch\">
     <display-name>{cfg['channel_name']}</display-name>
-    <icon src="{logo_url}"/>
+    <icon src=\"{logo_url}\"/>
   </channel>
-  <programme start="{now}" channel="twitch">
+  <programme start=\"{now}\" channel=\"twitch\">
     <title>{state.current_source.title() if state.current_source else "Unknown"} Content</title>
   </programme>
 </tv>"""
@@ -99,22 +100,30 @@ def index():
                 cfg["channel_logo"] = url_for('static_files', filename=f'logos/{filename}')
                 cfg["custom_logo"] = True
                 save_config(cfg)
+        
+        # Cookie file upload
+        if 'cookies' in request.files:
+            cookie_file = request.files['cookies']
+            if cookie_file.filename != '':
+                cookie_path = os.path.join(config.BASE_DIR, 'cookies.txt')
+                cookie_file.save(cookie_path)
+                print("🍪 Cookies.txt uploaded successfully.")
 
         return redirect("/")
 
     yt_list = ""
     for ch in cfg.get("youtube_channels", []):
         yt_list += f"""
-        <li class='list-item'>
+        <div class="flex items-center justify-between bg-gray-700 p-2 rounded-md">
             <span>{ch}</span>
-            <a href='/remove_channel/{ch}' class='btn btn-danger'>Remove</a>
-        </li>
+            <a href='/remove_channel/{ch}' class="px-2 py-1 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">Remove</a>
+        </div>
         """
-    yt_list = f"<ul class='list'>{yt_list}</ul>" if yt_list else "<p>No channels added.</p>"
+    yt_list = f"<div class='space-y-2'>{yt_list}</div>" if yt_list else "<p>No channels added.</p>"
 
     playlist_preview = "".join(
-        [f"<li class='list-item'>{m['title']} ({m['duration']}) "
-         f"<a href='{m['url']}' target='_blank' class='btn btn-link'>Watch</a></li>"
+        [f"<div class='flex items-center justify-between bg-gray-700 p-2 rounded-md'><span>{m['title']} ({m['duration']})</span> "
+         f"<a href='{m['url']}' target='_blank' class='px-2 py-1 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700'>Watch</a></div>"
          for m in state.youtube_meta]
     ) if state.youtube_meta else "<p>No videos cached.</p>"
 
@@ -122,92 +131,14 @@ def index():
     if cfg.get("custom_logo"):
         logo_url = url_for('static_files', filename=os.path.basename(logo_url))
 
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>twitch-jellyfin</title>
-      <style>
-        body {{
-          font-family: Arial, sans-serif;
-          background-color: #121212;
-          color: #e0e0e0;
-          margin: 0;
-          padding: 0;
-        }}
-        .container {{
-          max-width: 800px;
-          margin: 40px auto;
-          background: #1e1e1e;
-          padding: 20px 30px;
-          border-radius: 8px;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-        }}
-        h2, h3 {{ margin-top: 20px; color: #fff; }}
-        .card {{ background: #2a2a2a; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #333; }}
-        .badge {{ display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; background: #17a2b8; color: #fff; }}
-        .btn {{ display: inline-block; padding: 6px 12px; margin: 2px; font-size: 0.9em; border-radius: 4px; text-decoration: none; cursor: pointer; }}
-        .btn-primary {{ background: #007bff; color: #fff; }}
-        .btn-secondary {{ background: #6c757d; color: #fff; }}
-        .btn-success {{ background: #28a745; color: #fff; }}
-        .btn-warning {{ background: #ffc107; color: #000; }}
-        .btn-danger {{ background: #dc3545; color: #fff; }}
-        .btn-link {{ background: none; color: #66b2ff; text-decoration: underline; }}
-        .list {{ list-style: none; padding: 0; margin: 0; }}
-        .list-item {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #333; }}
-        .list-item:last-child {{ border-bottom: none; }}
-        form {{ margin-top: 10px; }}
-        input[type="text"], input[name="yt_channel"], input[name="twitch_channel"], input[name="channel_name"] {{ padding: 6px; font-size: 0.9em; border: 1px solid #444; border-radius: 4px; width: 70%; background: #222; color: #eee; }}
-        .logo-preview {{ max-width: 50px; max-height: 50px; border-radius: 50%; margin-right: 10px; }}
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h2>twitch-jellyfin</h2>
-        <div class="card">
-          <p><strong>Current source:</strong> <span class="badge">{state.current_source}</span></p>
-          <a href='/stream.m3u8' class="btn btn-primary">Stream.m3u8</a>
-          <a href='/playlist.m3u' class="btn btn-secondary">M3U Playlist</a>
-          <a href='/guide.xml' class="btn btn-secondary">XMLTV Guide</a>
-          <a href='/status' class="btn btn-secondary">Status JSON</a>
-        </div>
-
-        <h3>Settings</h3>
-        <form method="POST" class="d-flex mt-2">
-          <input name="twitch_channel" placeholder="Twitch Channel" value="{cfg['twitch_channel']}">
-          <button type="submit" class="btn btn-success">Save</button>
-        </form>
-
-        <h3>Channel Branding</h3>
-        <form method="POST" enctype="multipart/form-data">
-            <img src="{logo_url}" class="logo-preview">
-            <input type="text" name="channel_name" placeholder="Channel Name" value="{cfg['channel_name']}">
-            <input type="file" name="channel_logo">
-            <button type="submit" class="btn btn-success">Save Branding</button>
-            <a href="/revert_branding" class="btn btn-warning">Revert to Default</a>
-        </form>
-
-        <h3>YouTube Channels</h3>
-        {yt_list}
-        <form method="POST" class="d-flex mt-2">
-          <input name="yt_channel" placeholder="channel/UC... or @handle">
-          <button type="submit" class="btn btn-success">Add</button>
-        </form>
-        <form method="POST" action="/refresh_youtube">
-          <button type="submit" class="btn btn-warning">Force Refresh YouTube Cache</button>
-        </form>
-        <form method="POST" action="/clear_cache">
-          <button type="submit" class="btn btn-danger">🗑️ Clear YouTube Cache</button>
-        </form>
-
-        <h3 class="mt-4">Current YouTube Playlist</h3>
-        <ul class="list">
-          {playlist_preview}
-        </ul>
-      </div>
-    </body>
-    </html>
-    """
+    return render_template(
+        "index.html",
+        cfg=cfg,
+        source=state.current_source,
+        yt_list=yt_list,
+        playlist_preview=playlist_preview,
+        logo_url=logo_url
+    )
 
 @app.route("/remove_channel/<channel>")
 def remove_channel(channel):
