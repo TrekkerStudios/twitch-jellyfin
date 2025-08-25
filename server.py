@@ -103,9 +103,10 @@ def playlist():
     host_ip = get_local_ip()
     base_url = f"http://{host_ip}:3000"
 
+    # Append ContentType hint so Jellyfin treats it as raw MPEG-TS
     return f"""#EXTM3U
 #EXTINF:-1 tvg-id="twitch" tvg-name="{cfg['channel_name']}" group-title="Live",{cfg['channel_name']} Live
-{base_url}/stream.ts
+{base_url}/stream.ts|ContentType=video/mp2t
 """
 
 
