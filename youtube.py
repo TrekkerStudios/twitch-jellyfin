@@ -41,21 +41,21 @@ class YTDLPLogger:
     def error(self, msg):
         yt_dlp_logger.error(msg)
 
-def fetch_youtube_videos(channels, max_videos=5):
-    """Fetch exactly the latest N valid YouTube uploads (with duration filter)."""
+def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
+    """Fetch the latest N valid YouTube uploads, respecting cache, rate limit, and cleanup."""
     ydl_opts = {
         "format": "best[ext=mp4]",
         "outtmpl": os.path.join(config.YOUTUBE_DIR, "%(id)s.%(ext)s"),
         "cachedir": os.path.join(config.BASE_DIR, "yt_dlp_cache"),
-        "playlistend": max_videos * 5,  # fetch a small buffer to filter from
+        "playlistend": max_videos * 5,
         "logger": YTDLPLogger(),
         "progress_hooks": [lambda d: logging.info(f"yt-dlp: {d}")],
         "match_filter": "!is_short",
     }
 
-    cookie_file = os.path.join(config.BASE_DIR, 'cookies.txt')
+    cookie_file = os.path.join(config.BASE_DIR, "cookies.txt")
     if os.path.exists(cookie_file):
-        ydl_opts['cookiefile'] = cookie_file
+        ydl_opts["cookiefile"] = cookie_file
 
     ydl = YoutubeDL(ydl_opts)
     downloaded, meta = [], []
@@ -77,17 +77,20 @@ def fetch_youtube_videos(channels, max_videos=5):
 
             info = ydl.extract_info(url, download=False)
             entries = info.get("entries") or []
-            valid_entries = []
 
-            # Filter by duration until we have enough
+            # Filter by duration and take only the latest N
+            valid_entries = []
             for e in entries:
                 if not e:
                     continue
                 duration = e.get("duration", 0)
-                if 60 <= duration <= 10800:  # between 1 min and 3 hrs
+                if 60 <= duration <= 10800:  # 1 min – 3 hrs
                     valid_entries.append(e)
                 if len(valid_entries) >= max_videos:
                     break
+
+            # Track which IDs should be kept
+            keep_ids = [e["id"] for e in valid_entries]
 
             for e in valid_entries:
                 video_id = e["id"]
@@ -97,6 +100,7 @@ def fetch_youtube_videos(channels, max_videos=5):
                     print(f"⬇️ Downloading {e.get('title', 'Unknown')}...")
                     logging.info(f"Downloading {e.get('title')} ({e['webpage_url']})")
                     ydl.download([e["webpage_url"]])
+                    time.sleep(rate_limit)  # rate limit between downloads
                 else:
                     print(f"✅ Already cached: {e.get('title', 'Unknown')}")
                     logging.info(f"Already cached: {e.get('title')}")
@@ -111,8 +115,22 @@ def fetch_youtube_videos(channels, max_videos=5):
                     }
                 )
 
+            # Cleanup: remove old cached files not in keep_ids
+            for f in os.listdir(config.YOUTUBE_DIR):
+                if f.endswith(".mp4"):
+                    vid_id, _ = os.path.splitext(f)
+                    if vid_id not in keep_ids:
+                        old_path = os.path.join(config.YOUTUBE_DIR, f)
+                        try:
+                            os.remove(old_path)
+                            print(f"🗑️ Removed old cached video: {f}")
+                            logging.info(f"Removed old cached video: {f}")
+                        except Exception as e:
+                            logging.warning(f"Failed to remove {f}: {e}")
+
         except Exception:
             import traceback
+
             print("⚠️ YouTube fetch error")
             logging.exception("YouTube fetch error")
             traceback.print_exc()
