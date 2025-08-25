@@ -1,3 +1,4 @@
+# youtube.py
 import os
 import random
 import time
@@ -12,34 +13,67 @@ log_dir = config.BASE_DIR
 os.makedirs(log_dir, exist_ok=True)
 log_path = os.path.join(log_dir, "yt_dlp_debug.log")
 
-# Create a specific logger for yt-dlp
 yt_dlp_logger = logging.getLogger("yt-dlp-logger")
 yt_dlp_logger.setLevel(logging.DEBUG)
 
-# Create a file handler
 file_handler = logging.FileHandler(log_path)
 file_handler.setLevel(logging.DEBUG)
-
-# Create a formatter and set it for the handler
 formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 file_handler.setFormatter(formatter)
-
-# Add the handler to the logger
 yt_dlp_logger.addHandler(file_handler)
 
-# Touch the file to make sure it exists
-with open(log_path, 'a'):
+with open(log_path, "a"):
     os.utime(log_path, None)
 
 print(f"📝 yt-dlp log path: {log_path}")
 
+
 class YTDLPLogger:
     def debug(self, msg):
         yt_dlp_logger.debug(msg)
+
     def warning(self, msg):
         yt_dlp_logger.warning(msg)
+
     def error(self, msg):
         yt_dlp_logger.error(msg)
+
+
+def _channel_url(channel: str) -> str:
+    """Normalize channel input to always point to the /videos tab."""
+    channel = channel.strip()
+    if channel.startswith("@"):
+        return f"https://www.youtube.com/{channel}/videos"
+    elif channel.startswith("UC"):
+        return f"https://www.youtube.com/channel/{channel}/videos"
+    elif channel.startswith("channel/"):
+        return f"https://www.youtube.com/{channel}/videos"
+    else:
+        return f"https://www.youtube.com/@{channel}/videos"
+
+
+def load_cached_videos(max_videos=5):
+    """Return up to N most recent cached YouTube videos with metadata."""
+    files = [
+        os.path.join(config.YOUTUBE_DIR, f)
+        for f in os.listdir(config.YOUTUBE_DIR)
+        if f.endswith(".mp4")
+    ]
+    files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+    files = files[:max_videos]
+
+    meta = []
+    for f in files:
+        meta.append(
+            {
+                "title": os.path.basename(f),
+                "duration": "unknown",
+                "url": None,
+                "path": f,
+            }
+        )
+    return files, meta
+
 
 def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
     """Fetch the latest N valid YouTube uploads, respecting cache, rate limit, and cleanup."""
@@ -62,17 +96,8 @@ def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
 
     for channel in channels:
         try:
-            channel = channel.strip()
-            if channel.startswith("@"):
-                url = f"https://www.youtube.com/{channel}"
-            elif channel.startswith("UC"):
-                url = f"https://www.youtube.com/channel/{channel}"
-            elif channel.startswith("channel/"):
-                url = f"https://www.youtube.com/{channel}"
-            else:
-                url = f"https://www.youtube.com/@{channel}"
-
-            print(f"📺 Fetching last {max_videos} valid videos for {channel}...")
+            url = _channel_url(channel)
+            print(f"📺 Fetching last {max_videos} valid videos for {url}...")
             logging.info(f"Fetching from {url}")
 
             info = ydl.extract_info(url, download=False)
@@ -89,7 +114,6 @@ def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
                 if len(valid_entries) >= max_videos:
                     break
 
-            # Track which IDs should be kept
             keep_ids = [e["id"] for e in valid_entries]
 
             for e in valid_entries:
@@ -137,15 +161,26 @@ def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
 
     return downloaded, meta
 
+
 def refresh_youtube_cache():
-    """Background thread: refresh YouTube cache hourly"""
+    """Background thread: refresh YouTube cache hourly (cache-first + cleanup)."""
     while True:
         cfg = load_config()
-        state.youtube_cache, state.youtube_meta = fetch_youtube_videos(
-            cfg.get("youtube_channels", [])
-        )
-        print(f"✅ YouTube cache refreshed: {len(state.youtube_cache)} videos")
+
+        # 1. Load cached files first
+        cached, cached_meta = load_cached_videos(max_videos=5)
+        if cached:
+            state.youtube_cache, state.youtube_meta = cached, cached_meta
+            print(f"⚡ Using {len(cached)} cached videos (no fetch needed)")
+        else:
+            # 2. If not enough cached, fetch from YouTube
+            state.youtube_cache, state.youtube_meta = fetch_youtube_videos(
+                cfg.get("youtube_channels", []), max_videos=5
+            )
+            print(f"✅ YouTube cache refreshed: {len(state.youtube_cache)} videos")
+
         time.sleep(config.YOUTUBE_REFRESH)
+
 
 def build_youtube_playlist():
     """Build a randomized playlist file from cached YouTube videos."""
