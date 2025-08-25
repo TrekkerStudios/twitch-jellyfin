@@ -69,8 +69,12 @@ def playlist():
     cfg = load_config()
     host_ip = get_local_ip()
     base_url = f"http://{host_ip}:3000"
+
+    # Use a stable tvg-id (e.g. "twitch") that matches guide.xml
+    tvg_id = "twitch"
+
     return f"""#EXTM3U
-#EXTINF:-1,{cfg['channel_name']} Live
+#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{cfg['channel_name']}" group-title="Live",{cfg['channel_name']} Live
 {base_url}/stream.m3u8
 """
 
@@ -84,16 +88,18 @@ def guide():
 
     logo_url = cfg.get("channel_logo", "")
     if cfg.get("custom_logo"):
-        # ensure absolute URL for Jellyfin
         logo_url = base_url + logo_url
+
+    # Match tvg-id from playlist.m3u
+    tvg_id = "twitch"
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <tv>
-  <channel id="twitch">
+  <channel id="{tvg_id}">
     <display-name>{cfg['channel_name']}</display-name>
     <icon src="{logo_url}"/>
   </channel>
-  <programme start="{now}" channel="twitch">
+  <programme start="{now}" channel="{tvg_id}">
     <title>{state.current_source.title() if state.current_source else "Unknown"} Content</title>
   </programme>
 </tv>"""
