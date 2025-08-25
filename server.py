@@ -26,7 +26,10 @@ def stream():
 def playlist():
     cfg = load_config()
     base_url = request.host_url.rstrip('/')
-    return f"#EXTM3U\n#EXTINF:-1,{cfg['channel_name']} Live\n{base_url}/stream.m3u8\n"
+    return f"#EXTM3U
+#EXTINF:-1,{cfg['channel_name']} Live
+{base_url}/stream.m3u8
+"
 
 @app.route("/guide.xml")
 def guide():

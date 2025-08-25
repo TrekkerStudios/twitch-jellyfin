@@ -8,7 +8,7 @@ import state
 from utils import load_config
 
 # Setup yt-dlp debug logger
-log_dir = os.path.join(config.BASE_DIR, "tmp")
+log_dir = config.BASE_DIR
 os.makedirs(log_dir, exist_ok=True)
 log_path = os.path.join(log_dir, "yt_dlp_debug.log")
 
@@ -50,6 +50,7 @@ def fetch_youtube_videos(channels, max_videos=5):
         "playlistend": max_videos * 5,  # fetch a small buffer to filter from
         "logger": YTDLPLogger(),
         "progress_hooks": [lambda d: logging.info(f"yt-dlp: {d}")],
+        "match_filter": "!is_short",
     }
 
     cookie_file = os.path.join(config.BASE_DIR, 'cookies.txt')
