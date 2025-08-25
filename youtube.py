@@ -43,12 +43,12 @@ def fetch_youtube_videos(channels, max_videos=5):
     for channel in channels:
         try:
             # Normalize channel URL
-            if channel.startswith("@"):
-                url = f"https://www.youtube.com/{channel}/videos"
-            elif channel.startswith("UC"):
+            if channel.startswith("UC"):
                 url = f"https://www.youtube.com/channel/{channel}/videos"
             else:
-                url = f"https://www.youtube.com/c/{channel}/videos"
+                # Assumes other channels are handles (either with or without @)
+                handle = channel if channel.startswith("@") else f"@{channel}"
+                url = f"https://www.youtube.com/{handle}/videos"
 
             print(f"📺 Fetching last {max_videos} valid videos for {channel}...")
             logging.info(f"Fetching from {url}")
