@@ -1,5 +1,6 @@
 import os
 import time
+import socket
 from flask import (
     Flask,
     send_from_directory,
@@ -16,6 +17,19 @@ from youtube import fetch_youtube_videos
 
 app = Flask(__name__, template_folder="templates")
 app.config["UPLOAD_FOLDER"] = "static/logos"
+
+
+def get_local_ip():
+    """Return LAN IP of this machine (not localhost)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # doesn't actually send
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
 
 
 # --- Static + HLS Routes ---
@@ -53,7 +67,8 @@ def stream():
 @app.route("/playlist.m3u")
 def playlist():
     cfg = load_config()
-    base_url = request.host_url.rstrip("/")
+    host_ip = get_local_ip()
+    base_url = f"http://{host_ip}:3000"
     return f"""#EXTM3U
 #EXTINF:-1,{cfg['channel_name']} Live
 {base_url}/stream.m3u8
@@ -64,9 +79,13 @@ def playlist():
 def guide():
     cfg = load_config()
     now = time.strftime("%Y%m%d%H%M%S")
+    host_ip = get_local_ip()
+    base_url = f"http://{host_ip}:3000"
+
     logo_url = cfg.get("channel_logo", "")
     if cfg.get("custom_logo"):
-        logo_url = request.host_url.rstrip("/") + logo_url
+        # ensure absolute URL for Jellyfin
+        logo_url = base_url + logo_url
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -217,7 +236,7 @@ def clear_cache():
     return redirect("/")
 
 
-# --- Optional: CORS headers for Jellyfin/web clients ---
+# --- CORS headers for Jellyfin/web clients ---
 @app.after_request
 def add_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
