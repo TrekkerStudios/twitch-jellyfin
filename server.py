@@ -88,12 +88,13 @@ def hls_root(filename):
     return send_from_directory(config.HLS_DIR, filename)
 
 
-@app.route("/stream.m3u8")
-def stream():
-    host_ip = get_local_ip()
-    base_url = f"http://{host_ip}:3000"
-    fixed = fix_m3u8(os.path.join(config.HLS_DIR, "stream.m3u8"), base_url)
-    return app.response_class(fixed, mimetype="application/vnd.apple.mpegurl")
+@app.route("/stream.ts")
+def stream_ts():
+    return send_from_directory(
+        config.HLS_DIR,
+        "stream.ts",
+        mimetype="video/mp2t",
+    )
 
 
 @app.route("/playlist.m3u")
@@ -102,12 +103,9 @@ def playlist():
     host_ip = get_local_ip()
     base_url = f"http://{host_ip}:3000"
 
-    # Use a stable tvg-id (e.g. "twitch") that matches guide.xml
-    tvg_id = "twitch"
-
     return f"""#EXTM3U
-#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{cfg['channel_name']}" group-title="Live",{cfg['channel_name']} Live
-{base_url}/stream.m3u8
+#EXTINF:-1 tvg-id="twitch" tvg-name="{cfg['channel_name']}" group-title="Live",{cfg['channel_name']} Live
+{base_url}/stream.ts
 """
 
 

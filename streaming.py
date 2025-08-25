@@ -9,37 +9,40 @@ from youtube import build_youtube_playlist
 
 
 def start_ffmpeg():
-    """Start persistent FFmpeg reading from pipe"""
+    """Start persistent FFmpeg writing MPEG-TS directly for Jellyfin"""
     ffmpeg_cmd = [
         "ffmpeg",
         "-y",
         "-hide_banner",
-        "-loglevel",
-        "info",
+        "-loglevel", "info",
         "-re",
-        "-i",
-        config.PIPE_PATH,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-c:a",
-        "aac",
-        "-f",
-        "hls",
-        "-hls_time",
-        "4",
-        "-hls_list_size",
-        "5",
-        "-hls_flags",
-        "delete_segments",
-        "-hls_segment_filename",
-        os.path.join(config.HLS_DIR, "stream%d.ts"),
-        os.path.join(config.HLS_DIR, "stream.m3u8"),
+        "-i", config.PIPE_PATH,
+
+        # Video
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "zerolatency",   # good for live streaming
+        "-pix_fmt", "yuv420p",
+
+        # Audio
+        "-c:a", "aac",
+        "-b:a", "192k",
+
+        # MPEG-TS container options
+        "-f", "mpegts",
+        "-mpegts_flags", "resend_headers+initial_discontinuity",
+        "-muxrate", "8000k",      # optional: constant mux rate for IPTV
+        "-muxdelay", "0.7",       # reduce latency
+        "-muxpreload", "0.7",
+        "-pat_period", "0.5",     # send PAT/PMT tables every 0.5s
+        "-pcr_period", "20",      # PCR interval (ms)
+
+        os.path.join(config.HLS_DIR, "stream.ts"),
     ]
+
     log_file = open(config.FFMPEG_LOG, "a")
     subprocess.Popen(ffmpeg_cmd, stdout=log_file, stderr=log_file)
-    print("🎬 Persistent FFmpeg started (logs → ffmpeg.log)")
+    print("🎬 Persistent FFmpeg started (MPEG-TS output, Jellyfin-friendly)")
 
 
 def write_twitch(channel):
