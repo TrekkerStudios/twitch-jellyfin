@@ -52,15 +52,28 @@
     <!-- YouTube Channels -->
     <div class="card">
       <h3>YouTube Channels</h3>
-      <div>{{ yt_list|safe }}</div>
-      <form method="POST" style="margin-top:1rem">
+
+      <!-- Channel List -->
+      <div class="channel-list">
+        {% for ch in yt_list %}
+        <div class="channel-item">
+          <span>{{ ch.name or ch.id }}</span>
+          <a href="/remove_channel/{{ ch.id }}">Remove</a>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Add Channel -->
+      <form method="POST">
         <label for="yt_channel">Add Channel</label>
         <div class="form-row">
           <input type="text" name="yt_channel" id="yt_channel" placeholder="@handle or channel/ID">
           <button type="submit" class="btn btn-secondary">Add</button>
         </div>
       </form>
-      <div class="grid" style="grid-auto-flow: column; gap:0.5rem; margin-top:1rem">
+
+      <!-- Actions -->
+      <div class="btn-group">
         <form method="POST" action="/refresh_youtube">
           <button type="submit" class="btn btn-warning">Force Refresh</button>
         </form>
@@ -68,6 +81,8 @@
           <button type="submit" class="btn btn-danger">Clear Cache</button>
         </form>
       </div>
+
+      <!-- Upload Cookies -->
       <form method="POST" enctype="multipart/form-data" style="margin-top:1rem">
         <label for="cookies">Upload Cookies.txt</label>
         <input type="file" name="cookies" id="cookies">
