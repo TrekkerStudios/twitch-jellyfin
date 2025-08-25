@@ -235,6 +235,16 @@ def clear_cache():
     print("🗑️ YouTube cache cleared.")
     return redirect("/")
 
+@app.route("/update_transcode", methods=["POST"])
+def update_transcode():
+    cfg = load_config()
+    cfg["youtube_transcode"] = request.form.get("youtube_transcode") == "true"
+    cfg["youtube_crf"] = int(request.form.get("youtube_crf", 20))
+    cfg["youtube_audio_bitrate"] = request.form.get("youtube_audio_bitrate", "192k")
+    save_config(cfg)
+    print(f"⚙️ Updated transcoding: {cfg}")
+    return redirect("/")
+
 
 # --- CORS headers for Jellyfin/web clients ---
 @app.after_request

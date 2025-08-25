@@ -78,7 +78,8 @@ def load_cached_videos(max_videos=5):
 def fetch_youtube_videos(channels, max_videos=5, rate_limit=10):
     """Fetch the latest N valid YouTube uploads, respecting cache, rate limit, and cleanup."""
     ydl_opts = {
-        "format": "best[ext=mp4]",
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "merge_output_format": "mp4",
         "outtmpl": os.path.join(config.YOUTUBE_DIR, "%(id)s.%(ext)s"),
         "cachedir": os.path.join(config.BASE_DIR, "yt_dlp_cache"),
         "playlistend": max_videos * 5,
