@@ -77,7 +77,7 @@ def stop_writer():
             state.current_writer_proc.kill()
     state.current_writer_proc = None
 
-def wait_for_playlist(timeout=10):
+def wait_for_playlist(timeout=30):
     """Wait until HLS playlist exists"""
     playlist = os.path.join(config.HLS_DIR, "stream.m3u8")
     start = time.time()
