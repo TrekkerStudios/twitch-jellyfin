@@ -114,22 +114,20 @@ def index():
     yt_list = ""
     for ch in cfg.get("youtube_channels", []):
         yt_list += f"""
-        <div class="flex items-center justify-between bg-gray-700 p-2 rounded-md">
-            <span>{ch}</span>
-            <a href='/remove_channel/{ch}' class="px-2 py-1 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">Remove</a>
+        <div class="flex items-center justify-between bg-gray-700 p-3 rounded-lg">
+            <span class="font-medium text-white">{ch}</span>
+            <a href='/remove_channel/{ch}' class="px-3 py-1 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors">Remove</a>
         </div>
         """
-    yt_list = f"<div class='space-y-2'>{yt_list}</div>" if yt_list else "<p>No channels added.</p>"
+    yt_list = f"<div class='space-y-3'>{yt_list}</div>" if yt_list else "<p class='text-gray-400'>No channels added.</p>"
 
     playlist_preview = "".join(
-        [f"<div class='flex items-center justify-between bg-gray-700 p-2 rounded-md'><span>{m['title']} ({m['duration']})</span> "
-         f"<a href='{m['url']}' target='_blank' class='px-2 py-1 text-xs font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700'>Watch</a></div>"
+        [f"<div class='flex items-center justify-between bg-gray-700 p-3 rounded-lg'><span class='font-medium text-white truncate'>{m['title']} ({m['duration']})</span> "
+         f"<a href='{m['url']}' target='_blank' class='px-3 py-1 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors'>Watch</a></div>"
          for m in state.youtube_meta]
-    ) if state.youtube_meta else "<p>No videos cached.</p>"
+    ) if state.youtube_meta else "<p class='text-gray-400'>No videos cached.</p>"
 
     logo_url = cfg.get("channel_logo", '')
-    if cfg.get("custom_logo"):
-        logo_url = url_for('static_files', filename=os.path.basename(logo_url))
 
     return render_template(
         "index.html",

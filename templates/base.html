@@ -1,34 +1,79 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>twitch-jellyfin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/css/iziToast.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
 </head>
-<body class="bg-gray-900 text-gray-200 font-sans">
-    <div class="container mx-auto max-w-3xl mt-8">
+<body class="bg-gray-900 text-gray-300 font-sans">
+    <div class="container mx-auto max-w-4xl mt-8 p-4">
+        <h1 class="text-3xl font-bold text-white mb-6">twitch-jellyfin</h1>
         {% block content %}{% endblock %}
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/js/iziToast.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/js/iToast.min.js"></script>
     <script>
         function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(function() {
-                iziToast.success({
-                    title: 'OK',
-                    message: 'Copied to clipboard!',
-                    position: 'topRight',
-                    backgroundColor: '#1a202c',
-                    titleColor: '#a0aec0',
-                    messageColor: '#a0aec0',
-                    iconColor: '#a0aec0'
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(function() {
+                    iziToast.success({
+                        title: 'OK',
+                        message: 'Copied to clipboard!',
+                        position: 'topRight',
+                        backgroundColor: '#2d3748',
+                        titleColor: '#e2e8f0',
+                        messageColor: '#e2e8f0',
+                        iconColor: '#e2e8f0'
+                    });
+                }, function(err) {
+                    iziToast.error({
+                        title: 'Error',
+                        message: 'Could not copy text: ' + err,
+                        position: 'topRight'
+                    });
                 });
-            }, function(err) {
-                iziToast.error({
-                    title: 'Error',
-                    message: 'Could not copy text: ' + err,
-                    position: 'topRight'
-                });
-            });
+            } else {
+                // Fallback for non-secure contexts
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    iziToast.success({
+                        title: 'OK',
+                        message: 'Copied to clipboard!',
+                        position: 'topRight',
+                        backgroundColor: '#2d3748',
+                        titleColor: '#e2e8f0',
+                        messageColor: '#e2e8f0',
+                        iconColor: '#e2e8f0'
+                    });
+                } catch (err) {
+                    iziToast.error({
+                        title: 'Error',
+                        message: 'Could not copy text: ' + err,
+                        position: 'topRight'
+                    });
+                }
+                document.body.removeChild(textArea);
+            }
         }
     </script>
 </body>

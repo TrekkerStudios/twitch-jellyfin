@@ -1,79 +1,82 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="bg-gray-800 shadow-md rounded-lg p-6 mb-8">
-    <h2 class="text-2xl font-bold mb-4">twitch-jellyfin</h2>
-    <div class="flex items-center space-x-4">
-        <p><strong>Current source:</strong> <span class="inline-block px-2 py-1 text-sm font-semibold text-white bg-blue-500 rounded-full">{{ source }}</span></p>
-        <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}stream.m3u8')" class="px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Stream.m3u8</a>
-        <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}playlist.m3u')" class="px-4 py-2 font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-700">M3U Playlist</a>
-        <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}guide.xml')" class="px-4 py-2 font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-700">XMLTV Guide</a>
-        <a href="{{ request.host_url }}status" class="px-4 py-2 font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-700">Status JSON</a>
-    </div>
-</div>
-
-<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-    <div class="bg-gray-800 shadow-md rounded-lg p-6">
-        <h3 class="text-xl font-bold mb-4">Settings</h3>
-        <form method="POST" class="space-y-4">
-            <div>
-                <label for="twitch_channel" class="block text-sm font-medium text-gray-400">Twitch Channel</label>
-                <div class="mt-1 flex rounded-md shadow-sm">
-                    <input type="text" name="twitch_channel" id="twitch_channel" value="{{ cfg.twitch_channel }}" class="flex-1 block w-full rounded-none rounded-l-md sm:text-sm bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500">
-                    <button type="submit" class="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600">Save</button>
-                </div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div class="lg:col-span-2 space-y-8">
+        <div class="bg-gray-800 shadow-lg rounded-lg p-6">
+            <h2 class="text-xl font-bold text-white mb-4">Stream Access</h2>
+            <div class="flex flex-wrap gap-4">
+                <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}stream.m3u8')" class="px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">Stream.m3u8</a>
+                <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}playlist.m3u')" class="px-4 py-2 font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-600 transition-colors">M3U Playlist</a>
+                <a href="javascript:void(0);" onclick="copyToClipboard('{{ request.host_url }}guide.xml')" class="px-4 py-2 font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-600 transition-colors">XMLTV Guide</a>
+                <a href="{{ request.host_url }}status" target="_blank" class="px-4 py-2 font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-600 transition-colors">Status JSON</a>
             </div>
-        </form>
+        </div>
 
-        <h3 class="text-xl font-bold mt-8 mb-4">Channel Branding</h3>
-        <form method="POST" enctype="multipart/form-data" class="space-y-4">
-            <div class="flex items-center space-x-4">
-                <img src="{{ logo_url }}" class="w-16 h-16 rounded-full">
+        <div class="bg-gray-800 shadow-lg rounded-lg p-6">
+            <h3 class="text-xl font-bold text-white mb-4">Configuration</h3>
+            <form method="POST" class="space-y-6">
                 <div>
-                    <label for="channel_name" class="block text-sm font-medium text-gray-400">Channel Name</label>
-                    <input type="text" name="channel_name" id="channel_name" value="{{ cfg.channel_name }}" class="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500">
+                    <label for="twitch_channel" class="block text-sm font-medium text-gray-400">Twitch Channel</label>
+                    <div class="mt-1 flex rounded-md shadow-sm">
+                        <input type="text" name="twitch_channel" id="twitch_channel" value="{{ cfg.twitch_channel }}" class="flex-1 block w-full rounded-none rounded-l-md sm:text-sm bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                        <button type="submit" class="inline-flex items-center px-4 py-2 rounded-r-md border border-l-0 border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600">Save</button>
+                    </div>
                 </div>
-            </div>
-            <div>
-                <label for="channel_logo" class="block text-sm font-medium text-gray-400">Channel Logo</label>
-                <input type="file" name="channel_logo" id="channel_logo" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-            </div>
-            <div class="flex space-x-4">
-                <button type="submit" class="px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Save Branding</button>
-                <a href="/revert_branding" class="px-4 py-2 font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Revert to Default</a>
-            </div>
-        </form>
-    </div>
-
-    <div class="bg-gray-800 shadow-md rounded-lg p-6">
-        <h3 class="text-xl font-bold mb-4">YouTube Channels</h3>
-        <div class="space-y-2">{{ yt_list|safe }}</div>
-        <form method="POST" class="mt-4 space-y-4">
-            <div>
-                <label for="yt_channel" class="block text-sm font-medium text-gray-400">Add Channel</label>
-                <div class="mt-1 flex rounded-md shadow-sm">
-                    <input type="text" name="yt_channel" id="yt_channel" placeholder="channel/UC... or @handle" class="flex-1 block w-full rounded-none rounded-l-md sm:text-sm bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500">
-                    <button type="submit" class="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600">Add</button>
-                </div>
-            </div>
-        </form>
-        <div class="mt-4 flex space-x-4">
-            <form method="POST" action="/refresh_youtube">
-                <button type="submit" class="px-4 py-2 font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Force Refresh</button>
-            </form>
-            <form method="POST" action="/clear_cache">
-                <button type="submit" class="px-4 py-2 font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">Clear Cache</button>
             </form>
         </div>
-        <form method="POST" enctype="multipart/form-data" class="mt-4 space-y-4">
-            <div>
-                <label for="cookies" class="block text-sm font-medium text-gray-400">Upload Cookies.txt</label>
-                <input type="file" name="cookies" id="cookies" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-            </div>
-            <button type="submit" class="px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Upload Cookies</button>
-        </form>
 
-        <h3 class="text-xl font-bold mt-8 mb-4">Current YouTube Playlist</h3>
-        <div class="space-y-2">{{ playlist_preview|safe }}</div>
+        <div class="bg-gray-800 shadow-lg rounded-lg p-6">
+            <h3 class="text-xl font-bold text-white mb-4">Channel Branding</h3>
+            <form method="POST" enctype="multipart/form-data" class="space-y-6">
+                <div class="flex items-center space-x-6">
+                    <img src="{{ logo_url }}" class="w-24 h-24 rounded-full object-cover border-4 border-gray-700">
+                    <div class="flex-1">
+                        <label for="channel_name" class="block text-sm font-medium text-gray-400">Channel Name</label>
+                        <input type="text" name="channel_name" id="channel_name" value="{{ cfg.channel_name }}" class="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                    </div>
+                </div>
+                <div>
+                    <label for="channel_logo" class="block text-sm font-medium text-gray-400">Upload New Logo</label>
+                    <input type="file" name="channel_logo" id="channel_logo" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200">
+                </div>
+                <div class="flex space-x-4">
+                    <button type="submit" class="px-6 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Save Branding</button>
+                    <a href="/revert_branding" class="px-6 py-2 font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Revert to Default</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="lg:col-span-1 space-y-8">
+        <div class="bg-gray-800 shadow-lg rounded-lg p-6">
+            <h3 class="text-xl font-bold text-white mb-4">YouTube Channels</h3>
+            <div class="space-y-4">{{ yt_list|safe }}</div>
+            <form method="POST" class="mt-6">
+                <label for="yt_channel" class="block text-sm font-medium text-gray-400">Add Channel</label>
+                <div class="mt-1 flex rounded-md shadow-sm">
+                    <input type="text" name="yt_channel" id="yt_channel" placeholder="@handle or channel/ID" class="flex-1 block w-full rounded-none rounded-l-md sm:text-sm bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                    <button type="submit" class="inline-flex items-center px-4 py-2 rounded-r-md border border-l-0 border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600">Add</button>
+                </div>
+            </form>
+            <div class="mt-6 flex space-x-4">
+                <form method="POST" action="/refresh_youtube">
+                    <button type="submit" class="px-4 py-2 font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Force Refresh</button>
+                </form>
+                <form method="POST" action="/clear_cache">
+                    <button type="submit" class="px-4 py-2 font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">Clear Cache</button>
+                </form>
+            </div>
+            <form method="POST" enctype="multipart/form-data" class="mt-6">
+                <label for="cookies" class="block text-sm font-medium text-gray-400">Upload Cookies.txt</label>
+                <input type="file" name="cookies" id="cookies" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200">
+                <button type="submit" class="mt-4 w-full px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Upload Cookies</button>
+            </form>
+        </div>
+
+        <div class="bg-gray-800 shadow-lg rounded-lg p-6">
+            <h3 class="text-xl font-bold text-white mb-4">Current YouTube Playlist</h3>
+            <div class="space-y-4">{{ playlist_preview|safe }}</div>
+        </div>
     </div>
 </div>
 {% endblock %}
