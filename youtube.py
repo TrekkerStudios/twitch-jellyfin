@@ -9,22 +9,37 @@ from utils import load_config
 
 # Setup yt-dlp debug logger
 log_dir = os.path.join(config.BASE_DIR, "tmp")
-os.makedirs(log_dir, exist_ok=True)  # make sure tmp/ exists
+os.makedirs(log_dir, exist_ok=True)
 log_path = os.path.join(log_dir, "yt_dlp_debug.log")
 
-logging.basicConfig(
-    filename=log_path,
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+# Create a specific logger for yt-dlp
+yt_dlp_logger = logging.getLogger("yt-dlp-logger")
+yt_dlp_logger.setLevel(logging.DEBUG)
+
+# Create a file handler
+file_handler = logging.FileHandler(log_path)
+file_handler.setLevel(logging.DEBUG)
+
+# Create a formatter and set it for the handler
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+file_handler.setFormatter(formatter)
+
+# Add the handler to the logger
+yt_dlp_logger.addHandler(file_handler)
+
+# Touch the file to make sure it exists
+with open(log_path, 'a'):
+    os.utime(log_path, None)
+
+print(f"📝 yt-dlp log path: {log_path}")
 
 class YTDLPLogger:
     def debug(self, msg):
-        logging.debug(msg)
+        yt_dlp_logger.debug(msg)
     def warning(self, msg):
-        logging.warning(msg)
+        yt_dlp_logger.warning(msg)
     def error(self, msg):
-        logging.error(msg)
+        yt_dlp_logger.error(msg)
 
 def fetch_youtube_videos(channels, max_videos=5):
     """Fetch exactly the latest N valid YouTube uploads (with duration filter)."""
