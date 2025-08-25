@@ -1,54 +1,84 @@
 import os
 import time
-from flask import Flask, send_from_directory, request, redirect, url_for, render_template
+from flask import (
+    Flask,
+    send_from_directory,
+    request,
+    redirect,
+    url_for,
+    render_template,
+)
 from werkzeug.utils import secure_filename
 import config
 import state
 from utils import load_config, save_config, get_twitch_user_info
 from youtube import fetch_youtube_videos
 
-app = Flask(__name__, template_folder='templates')
-app.config['UPLOAD_FOLDER'] = 'static/logos'
+app = Flask(__name__, template_folder="templates")
+app.config["UPLOAD_FOLDER"] = "static/logos"
 
+
+# --- Static + HLS Routes ---
 @app.route("/static/<path:filename>")
 def static_files(filename):
-    return send_from_directory('static', filename)
+    return send_from_directory("static", filename)
+
 
 @app.route("/<path:filename>")
 def hls_root(filename):
+    if filename.endswith(".m3u8"):
+        return send_from_directory(
+            config.HLS_DIR,
+            filename,
+            mimetype="application/vnd.apple.mpegurl",
+        )
+    elif filename.endswith(".ts"):
+        return send_from_directory(
+            config.HLS_DIR,
+            filename,
+            mimetype="video/mp2t",
+        )
     return send_from_directory(config.HLS_DIR, filename)
+
 
 @app.route("/stream.m3u8")
 def stream():
-    return send_from_directory(config.HLS_DIR, "stream.m3u8")
+    return send_from_directory(
+        config.HLS_DIR,
+        "stream.m3u8",
+        mimetype="application/vnd.apple.mpegurl",
+    )
+
 
 @app.route("/playlist.m3u")
 def playlist():
     cfg = load_config()
-    base_url = request.host_url.rstrip('/')
+    base_url = request.host_url.rstrip("/")
     return f"""#EXTM3U
 #EXTINF:-1,{cfg['channel_name']} Live
 {base_url}/stream.m3u8
 """
 
+
 @app.route("/guide.xml")
 def guide():
     cfg = load_config()
     now = time.strftime("%Y%m%d%H%M%S")
-    logo_url = cfg.get("channel_logo", '')
+    logo_url = cfg.get("channel_logo", "")
     if cfg.get("custom_logo"):
-        logo_url = request.host_url.rstrip('/') + logo_url
+        logo_url = request.host_url.rstrip("/") + logo_url
 
-    return f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <tv>
-  <channel id=\"twitch\">
+  <channel id="twitch">
     <display-name>{cfg['channel_name']}</display-name>
-    <icon src=\"{logo_url}\"/>
+    <icon src="{logo_url}"/>
   </channel>
-  <programme start=\"{now}\" channel=\"twitch\">
+  <programme start="{now}" channel="twitch">
     <title>{state.current_source.title() if state.current_source else "Unknown"} Content</title>
   </programme>
 </tv>"""
+
 
 @app.route("/revert_branding")
 def revert_branding():
@@ -61,10 +91,12 @@ def revert_branding():
         save_config(cfg)
     return redirect("/")
 
+
 @app.route("/status")
 def status():
     cfg = load_config()
     return {"channel": cfg["twitch_channel"], "source": state.current_source}
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -94,21 +126,23 @@ def index():
             save_config(cfg)
 
         # Logo Upload
-        if 'channel_logo' in request.files:
-            logo = request.files['channel_logo']
-            if logo.filename != '':
+        if "channel_logo" in request.files:
+            logo = request.files["channel_logo"]
+            if logo.filename != "":
                 filename = secure_filename(logo.filename)
-                logo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                logo_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
                 logo.save(logo_path)
-                cfg["channel_logo"] = url_for('static_files', filename=f'logos/{filename}')
+                cfg["channel_logo"] = url_for(
+                    "static_files", filename=f"logos/{filename}"
+                )
                 cfg["custom_logo"] = True
                 save_config(cfg)
-        
+
         # Cookie file upload
-        if 'cookies' in request.files:
-            cookie_file = request.files['cookies']
-            if cookie_file.filename != '':
-                cookie_path = os.path.join(config.BASE_DIR, 'cookies.txt')
+        if "cookies" in request.files:
+            cookie_file = request.files["cookies"]
+            if cookie_file.filename != "":
+                cookie_path = os.path.join(config.BASE_DIR, "cookies.txt")
                 cookie_file.save(cookie_path)
                 print("🍪 Cookies.txt uploaded successfully.")
 
@@ -122,15 +156,25 @@ def index():
             <a href='/remove_channel/{ch}' class="px-3 py-1 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors">Remove</a>
         </div>
         """
-    yt_list = f"<div class='space-y-3'>{yt_list}</div>" if yt_list else "<p class='text-gray-400'>No channels added.</p>"
+    yt_list = (
+        f"<div class='space-y-3'>{yt_list}</div>"
+        if yt_list
+        else "<p class='text-gray-400'>No channels added.</p>"
+    )
 
-    playlist_preview = "".join(
-        [f"<div class='flex items-center justify-between bg-gray-700 p-3 rounded-lg'><span class='font-medium text-white truncate'>{m['title']} ({m['duration']})</span> "
-         f"<a href='{m['url']}' target='_blank' class='px-3 py-1 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors'>Watch</a></div>"
-         for m in state.youtube_meta]
-    ) if state.youtube_meta else "<p class='text-gray-400'>No videos cached.</p>"
+    playlist_preview = (
+        "".join(
+            [
+                f"<div class='flex items-center justify-between bg-gray-700 p-3 rounded-lg'><span class='font-medium text-white truncate'>{m['title']} ({m['duration']})</span> "
+                f"<a href='{m['url']}' target='_blank' class='px-3 py-1 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors'>Watch</a></div>"
+                for m in state.youtube_meta
+            ]
+        )
+        if state.youtube_meta
+        else "<p class='text-gray-400'>No videos cached.</p>"
+    )
 
-    logo_url = cfg.get("channel_logo", '')
+    logo_url = cfg.get("channel_logo", "")
 
     return render_template(
         "index.html",
@@ -138,8 +182,9 @@ def index():
         source=state.current_source,
         yt_list=yt_list,
         playlist_preview=playlist_preview,
-        logo_url=logo_url
+        logo_url=logo_url,
     )
+
 
 @app.route("/remove_channel/<channel>")
 def remove_channel(channel):
@@ -150,12 +195,16 @@ def remove_channel(channel):
         print(f"🗑️ Removed YouTube channel: {channel}")
     return redirect("/")
 
+
 @app.route("/refresh_youtube", methods=["POST"])
 def refresh_youtube():
     cfg = load_config()
-    state.youtube_cache, state.youtube_meta = fetch_youtube_videos(cfg.get("youtube_channels", []))
+    state.youtube_cache, state.youtube_meta = fetch_youtube_videos(
+        cfg.get("youtube_channels", [])
+    )
     print(f"🔄 Manual YouTube refresh: {len(state.youtube_cache)} videos")
     return redirect("/")
+
 
 @app.route("/clear_cache", methods=["POST"])
 def clear_cache():
@@ -166,3 +215,10 @@ def clear_cache():
             print("⚠️ Error deleting file:", f, e)
     print("🗑️ YouTube cache cleared.")
     return redirect("/")
+
+
+# --- Optional: CORS headers for Jellyfin/web clients ---
+@app.after_request
+def add_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
