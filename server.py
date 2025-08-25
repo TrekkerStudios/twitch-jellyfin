@@ -31,6 +31,39 @@ def get_local_ip():
         s.close()
     return ip
 
+def fix_m3u8(path, base_url):
+    """Read an HLS playlist, rewrite with absolute URLs + Jellyfin-friendly tags."""
+    lines = []
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # If it's a segment reference, make it absolute
+            if line.endswith(".ts") and not line.startswith("http"):
+                line = f"{base_url}/{line}"
+
+            lines.append(line)
+
+    # Ensure required tags
+    if not any(l.startswith("#EXT-X-PLAYLIST-TYPE") for l in lines):
+        lines.insert(3, "#EXT-X-PLAYLIST-TYPE:EVENT")  # after version/targetduration
+
+    # Fix target duration (round up to nearest int)
+    for l in lines:
+        if l.startswith("#EXTINF:"):
+            try:
+                dur = float(l.split(":")[1].split(",")[0])
+                target = int(dur + 0.999)  # ceil
+                break
+            except Exception:
+                target = 10
+    # Replace or insert targetduration
+    lines = [f"#EXT-X-TARGETDURATION:{target}" if l.startswith("#EXT-X-TARGETDURATION") else l for l in lines]
+
+    return "\n".join(lines) + "\n"
+
 
 # --- Static + HLS Routes ---
 @app.route("/static/<path:filename>")
@@ -57,11 +90,10 @@ def hls_root(filename):
 
 @app.route("/stream.m3u8")
 def stream():
-    return send_from_directory(
-        config.HLS_DIR,
-        "stream.m3u8",
-        mimetype="application/vnd.apple.mpegurl",
-    )
+    host_ip = get_local_ip()
+    base_url = f"http://{host_ip}:3000"
+    fixed = fix_m3u8(os.path.join(config.HLS_DIR, "stream.m3u8"), base_url)
+    return app.response_class(fixed, mimetype="application/vnd.apple.mpegurl")
 
 
 @app.route("/playlist.m3u")
